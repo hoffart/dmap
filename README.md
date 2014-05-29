@@ -32,6 +32,7 @@ dmapBuilder.build();
 // Get key.
 DMap dmap = new DMap(mapFile);
 byte[] retrieved = dmap.get(key); 
+```
 
 ## Usage Scenario
 
