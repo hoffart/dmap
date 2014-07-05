@@ -40,6 +40,7 @@ Read-only, random access key reads with no iteration.
 
 ## Upcoming Features
 
+ * Make DMapBuilder appendable.
+ * Obey memory usage limit.
  * Special int-int mode for more efficient storage.
  * String-String mode.
- * Make DMapBuilder appendable.
