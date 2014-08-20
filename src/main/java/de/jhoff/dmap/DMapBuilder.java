@@ -141,7 +141,14 @@ public class DMapBuilder {
       ByteArray valueBytes = tmpKVMap.get(keyBytes);
       value = valueBytes.getBytes();
 
-      int dataLength = 4 + value.length;;
+      int dataLength = 4 + value.length;
+
+      if(dataLength > blockSize) {
+        // clean up the tmp file and exit.
+        tmpMapFile_.delete();
+        throw new IOException("Data size ("+ dataLength +" bytes) greater than specified block size(" + blockSize + " bytes)");
+      }
+
       // write block trailer & reset variables
       if(dataLength > remainingBytes) {
         logger_.debug("Key : " + keyBytes + " with value doesnt fit in remaining "+ remainingBytes + " bytes.");        

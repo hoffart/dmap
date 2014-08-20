@@ -6,12 +6,19 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 import de.jhoff.dmap.util.ByteUtils;
 
 
 public class DMapBuilderTest {
+
+  /** Used for testing scenario where data doesnt fit into block*/
+  @Rule
+  public ExpectedException exception = ExpectedException.none();
+
   @Test
   public void test() throws IOException {
     File tmpFile = File.createTempFile("tmp", ".dmap");
@@ -79,18 +86,17 @@ public class DMapBuilderTest {
   public void exceedingBlockSizetest() throws IOException {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
-        
+    // data consist of an int(4 bytes) and its length(4 bytes) which doesnt fit in a single block. Throw IOException and exit.
     DMapBuilder dmapBuilder = new DMapBuilder(tmpFile,7);
     int count = 2;
     for (int i = 0; i < count; ++i) {
       dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
     }     
-    try{
-      dmapBuilder.build();     
-    }catch(IOException ioe){
-      
-    }
-    
+
+    exception.expect(IOException.class);
+    dmapBuilder.build();
+
+
     RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
     tmpFile.delete();
     raf.close();
