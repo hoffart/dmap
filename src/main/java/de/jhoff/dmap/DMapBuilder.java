@@ -36,7 +36,7 @@ public class DMapBuilder {
   /** Current Map File Version */
   private static final int VERSION = 1;
 
-  /** Default Key-Value Block size - set to 1 MB. */
+  /** Default Key-Value Block size (in bytes) - set to 1 MB. */
   private static final int DEFAULT_BLOCK_SIZE = 1048576;
 
   /** Current block size for the file*/
@@ -63,15 +63,27 @@ public class DMapBuilder {
     this(mapFile, DEFAULT_BLOCK_SIZE);
   }
 
+  /**
+   * 
+   * @param mapFile Map File instance.
+   * @param 
+   * @throws IOException
+   */
   public DMapBuilder(File mapFile, int block) throws IOException {
     boolean success = mapFile.createNewFile();
     if (success) {
       blockSize = block;
       mapFile_ = mapFile;
       tmpMapFile_ = new File("tmp_" + mapFile.getName());
-      tmpOutput_ = new DataOutputStream(
-                  new BufferedOutputStream(
-                    new FileOutputStream(tmpMapFile_), 1024));
+      success = tmpMapFile_.createNewFile();
+      if(success) {
+        tmpOutput_ = new DataOutputStream(
+            new BufferedOutputStream(
+              new FileOutputStream(tmpMapFile_), 1024));
+      } else {
+        throw new IOException("Error creating intermediate file: " + tmpMapFile_ + ", cannot write.");
+      }
+      
       output_ = new DataOutputStream(
           new BufferedOutputStream(
               new FileOutputStream(mapFile_), 1024));
@@ -141,7 +153,14 @@ public class DMapBuilder {
       ByteArray valueBytes = tmpKVMap.get(keyBytes);
       value = valueBytes.getBytes();
 
-      int dataLength = 4 + value.length;;
+      int dataLength = 4 + value.length;
+
+      if(dataLength > blockSize) {
+        // clean up the tmp file and exit.
+        tmpMapFile_.delete();
+        throw new IOException("Data size ("+ dataLength +" bytes) greater than specified block size(" + blockSize + " bytes)");
+      }
+
       // write block trailer & reset variables
       if(dataLength > remainingBytes) {
         logger_.debug("Key : " + keyBytes + " with value doesnt fit in remaining "+ remainingBytes + " bytes.");        
