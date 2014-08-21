@@ -20,7 +20,7 @@ public class DMapBuilderTest {
   public ExpectedException exception = ExpectedException.none();
 
   @Test
-  public void test() throws IOException {
+  public void testDMapBuilderForKeyValuePairs() throws IOException {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
         
@@ -50,7 +50,7 @@ public class DMapBuilderTest {
   }
   
   @Test
-  public void NoUnusedBlockSpaceTest() throws IOException {
+  public void testForNoUnusedBlockSpace() throws IOException {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
         
@@ -59,12 +59,9 @@ public class DMapBuilderTest {
     for (int i = 0; i < count; ++i) {
       dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
     }     
-    try{
-      dmapBuilder.build();     
-    }catch(IOException ioe){
-      
-    }
-    
+
+    dmapBuilder.build();     
+
     RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
     // trailer
     raf.seek(64);
@@ -81,13 +78,13 @@ public class DMapBuilderTest {
     tmpFile.delete();
     raf.close();
   }
-  
+
   @Test
-  public void exceedingBlockSizetest() throws IOException {
+  public void testForDataExceedingBlockSizeThrowsException() throws IOException {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
     // data consist of an int(4 bytes) and its length(4 bytes) which doesnt fit in a single block. Throw IOException and exit.
-    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile,7);
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 7);
     int count = 2;
     for (int i = 0; i < count; ++i) {
       dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
@@ -95,9 +92,62 @@ public class DMapBuilderTest {
 
     exception.expect(IOException.class);
     dmapBuilder.build();
+    tmpFile.delete();
+  }
 
+  @Test
+  public void testForDuplicateKeyThrowsIOException() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 10);
+    int count = 2;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(1), ByteUtils.getBytes(1));
+    }     
+
+    exception.expect(IOException.class);
+    dmapBuilder.build();
+    tmpFile.delete();
+  }
+  
+  @Test
+  public void testSortedKeysInMapFile() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+        
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 20);
+    int count = 10;
+    for (int i = count; i > 0; --i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }     
+
+    dmapBuilder.build();     
 
     RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
+    // verify 3rd blocks offset info stored in global trailer (starts at 236)
+    raf.seek(256);
+    assertEquals(104, raf.readInt());
+    // start of 3rd blocks trailer
+    assertEquals(120, raf.readInt());
+
+    // check for key-values in block 1
+    raf.seek(20);
+    assertEquals(1, raf.readInt());
+    raf.seek(28);
+    assertEquals(2, raf.readInt());
+
+    // check for key-values in block 3
+    raf.seek(108);
+    assertEquals(5, raf.readInt());
+    raf.seek(116);
+    assertEquals(6, raf.readInt());
+
+    // check for key-values in block 5
+    raf.seek(196);
+    assertEquals(9, raf.readInt());
+    raf.seek(204);
+    assertEquals(10, raf.readInt());
+
     tmpFile.delete();
     raf.close();
   }
