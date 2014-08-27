@@ -142,10 +142,14 @@ public class DMapBuilder {
       int globalOffset = 16;        
       int currentBlockOffset = 0;
       int remainingBytes = blockSize;
+      ByteArray firstKey = null;
+      
       // Map to store block-level key-offset pairs (to be written to each block trailer) 
       Map<ByteArray, Integer> blockKeyOffset_ = new HashMap<>();
       // Map to store blockStart-blockTrailerStart pair (to be written to global trailer)
       Map<Integer, Integer> blockTrailerOffsets = new HashMap<>();
+      // Map to store blockStart-firstKey pair (to be written to global trailer)
+      Map<Integer, ByteArray> blockFirstKey = new HashMap<>();
 
       for (ByteArray keyBytes : allKeys) {
         key = keyBytes.getBytes();
@@ -167,12 +171,17 @@ public class DMapBuilder {
         // write block trailer & reset variables
         if(dataLength > remainingBytes) {
           logger_.debug("Key : " + keyBytes + " with value doesnt fit in remaining "+ remainingBytes + " bytes.");        
-          globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, globalOffset);        
+          globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset);        
           logger_.debug("Creating new block @ " + globalOffset);
           currentBlockOffset = 0;
-          remainingBytes = blockSize;        
+          remainingBytes = blockSize;
+          firstKey = null;
         }
 
+        if(firstKey == null) {
+          firstKey = keyBytes;
+        }
+        
         logger_.debug("write@ "+ globalOffset +" key: " + keyBytes + ""
             + " (hash: " + keyBytes.hashCode() + ")");      
         output_.writeInt(value.length);
@@ -185,15 +194,19 @@ public class DMapBuilder {
       }
 
       // write the last block trailer information
-      globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, globalOffset); 
+      globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset); 
 
-      // write global trailer (block start offset-block trailer offset pair)
+      // write global trailer (block start offset-block trailer offset pair & first key in the block)
       output_.writeInt(blockTrailerOffsets.size());
       List<Integer> allBlockKeys = new ArrayList<>(blockTrailerOffsets.keySet());
       Collections.sort(allBlockKeys);
       for(int blockStart : allBlockKeys) {
         output_.writeInt(blockStart);
         output_.writeInt(blockTrailerOffsets.get(blockStart));
+        byte[] tmpFirstKeyByte = blockFirstKey.get(blockStart).getBytes();
+        // write the first key info to global trailer
+        output_.writeInt(tmpFirstKeyByte.length);
+        output_.write(tmpFirstKeyByte);
       }
       raf.close();
       output_.flush();
@@ -216,7 +229,10 @@ public class DMapBuilder {
   /*
    * Returns new global offset after updating the block trailer 
    */
-  private int updateBlockTrailer(Map<ByteArray, Integer> keyOffsets, Map<Integer, Integer> blockTrailerOffsets, int globalOffset) throws IOException {
+  private int updateBlockTrailer(Map<ByteArray, Integer> keyOffsets, 
+                                   Map<Integer, Integer> blockTrailerOffsets, 
+                                   Map<Integer, ByteArray> blockFirstKey, 
+                                   ByteArray firstKey, int globalOffset) throws IOException {
     int trailerOffset = output_.size();
     // write number of entries in the current block
     output_.writeInt(keyOffsets.size());
@@ -229,6 +245,8 @@ public class DMapBuilder {
     keyOffsets.clear();
     // track block offset info
     blockTrailerOffsets.put(globalOffset, trailerOffset);
+    // track first keys in each block
+    blockFirstKey.put(globalOffset, firstKey);
     return output_.size();        
   }
 }
