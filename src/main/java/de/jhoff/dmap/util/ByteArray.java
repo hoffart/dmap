@@ -37,9 +37,13 @@ public class ByteArray implements Comparable<ByteArray> {
     if (bytes_.length != bBytes.length) {
       return bytes_.length - bBytes.length;
     } else {
+      // TODO: this loop assumes that both ByteArrays would be of same length. Should be min(bytes.length, b.length)?
       for (int i = 0; i < bytes_.length; ++i) {
-        if (bytes_[i] != bBytes[i]) {
-          return bytes_[i] - bBytes[i];
+        // comparing unsigned ints instead of signed bytes
+        int maskedThis = (bytes_[i] & 0xff);
+        int maskedB = (bBytes[i] & 0xff);
+        if (maskedThis != maskedB) {
+          return maskedThis - maskedB;
         }
       }
       // Everything is the same.

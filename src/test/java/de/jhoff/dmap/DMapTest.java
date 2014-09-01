@@ -29,7 +29,7 @@ public class DMapTest {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
         
-    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile);
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
     int count = 1 << 10;
     for (int i = 0; i < count; ++i) {
       dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
@@ -51,7 +51,7 @@ public class DMapTest {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
         
-    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile);
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
     int count = 1 << 10;
     Random r = new Random();
     Map<Integer, Integer> kvs = new HashMap<>();
@@ -78,7 +78,7 @@ public class DMapTest {
     File tmpFile = File.createTempFile("tmp", ".dmap");
     tmpFile.delete();
         
-    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile);
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
     int count = 1 << 10;
     Random r = new Random();
     Map<Integer, Integer> kvs = new HashMap<>();    
