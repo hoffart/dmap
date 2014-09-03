@@ -15,7 +15,7 @@ public class DMapBenchmark {
     mapFile.delete();
 
     DMapBuilder dmapBuilder = new DMapBuilder(mapFile);
-    int values = 1 << 20;
+    int values = 1 << 15;
     ByteBuffer buf = ByteBuffer.allocate(4);
     long time1 = System.currentTimeMillis();
     for (int i = 0; i < values; ++i) {
@@ -23,6 +23,7 @@ public class DMapBenchmark {
       buf.rewind(); 
       dmapBuilder.add(bytes, bytes);
     }
+    dmapBuilder.build();
     long time2 = System.currentTimeMillis();
     long runTime = time2 - time1;
     System.out.println("Added " + values + " (int,int) pairs in " 
@@ -35,7 +36,7 @@ public class DMapBenchmark {
     System.out.println("Read map in " + runTime + "ms.");
     
     long time5 = System.currentTimeMillis();    
-    int readCount = 1 << 20;
+    int readCount = 1 << 15;
     Random r = new Random();
     for (int i = 0; i < readCount; ++i) {
       int keyInt = r.nextInt(values);

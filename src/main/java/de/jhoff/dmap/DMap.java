@@ -109,6 +109,7 @@ public class DMap {
   
   private void loadKeyDetails() throws IOException {    
     int numBlocks = getBlockCount();
+    logger_.info("Number of blocks in file : " + numBlocks);
     for(int blockCount = 0; blockCount < numBlocks; ++blockCount) {
       int blockStart = raf_.readInt();
       int blockTrailerStart = raf_.readInt();
@@ -145,7 +146,7 @@ public class DMap {
     }
     ByteArray keyBytes = new ByteArray(key);
     
-    logger_.info("get(" + keyBytes + ") - hash: " + keyBytes.hashCode());
+    logger_.debug("get(" + keyBytes + ") - hash: " + keyBytes.hashCode());
     ByteArray[] keys = new ByteArray[firstKeyInBlock_.size()];
     firstKeyInBlock_.keySet().toArray(keys);
     // identify the block containing the given key using first key information.
