@@ -122,7 +122,6 @@ public class DMapBuilderTest {
     }     
 
     dmapBuilder.build();     
-
     RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
     // verify 3rd blocks offset info stored in global trailer (starts at 236)
     raf.seek(256);
