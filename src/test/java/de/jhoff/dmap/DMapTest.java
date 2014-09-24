@@ -40,7 +40,7 @@ public class DMapTest {
     for (int i = 0; i < count; ++i) {
       byte[] value = dmap.get(ByteUtils.getBytes(i));
       assertEquals(i, ByteBuffer.wrap(value).getInt());
-    }    
+    }
     assertEquals(null, dmap.get(ByteUtils.getBytes(count + 1)));
     assertEquals(null, dmap.get(ByteUtils.getBytes(-1)));
     tmpFile.delete();
@@ -62,7 +62,7 @@ public class DMapTest {
       dmapBuilder.add(ByteUtils.getBytes(k), ByteUtils.getBytes(v));
     }
     dmapBuilder.build();
-   
+
     DMap dmap = new DMap(tmpFile);
     for (Entry<Integer, Integer> e : kvs.entrySet()) {
       byte[] value = dmap.get(ByteUtils.getBytes(e.getKey()));

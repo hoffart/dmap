@@ -47,13 +47,20 @@ public class DMap {
   /** Mapping of block start offset to block trailer offset. */
   private Map<Integer, Integer> blockOffsetInfo_;
 
-  /** Mapping of BlockTrailer Start offset and block trailer mapped bytebuffer of trailer*/
+  /** Flag to enable/disable preloading of key offset pairs. */
+  private boolean loadAllBlocksKeyOffsets;
+  
+  /** Mapping of BlockTrailer Start offset and block trailer mapped bytebuffer of trailer. */
   private Map<Integer, MappedByteBuffer> blockTrailerBuffer;
+  
+  /** Mapping of BlockTrailer start offset and all key-offset pairs info contained in the trailer. */
+  private Map<Integer, Map<ByteArray, Integer>> blockTrailerKeys;
   
   private Logger logger_ = LoggerFactory.getLogger(DMap.class);
     
   /**
-   * Default constructor, will preload key/offsets but not the values.
+   * Default constructor, will preload key/offsets but not the values 
+   * and limits number of blocks loaded to default of 3.
    * 
    * @param mapFile Map file created by DMapBuilder
    * @throws IOException 
@@ -62,10 +69,54 @@ public class DMap {
     this(mapFile, true, false, DEFAULT_BLOCK_LIMIT);
   }
   
+  /**
+   * Creates a DMap for given mapFile and defaults to *blockLimit* number of blocks.
+   * This constructor will preload all key-offset pairs but not the values.
+   * 
+   * @param mapFile
+   * @param blockLimit
+   * @throws IOException
+   */
   public DMap(File mapFile, int blockLimit) throws IOException{
     this(mapFile, true, false, blockLimit);
   }
   
+  /**
+   * DMap constructor that allows to customize offset preloading.
+   * Limits no. of blocks to default value 3 and does not load values in the memory.
+   * 
+   * @param mapFile
+   * @param preloadOffsets
+   * @throws IOException
+   */
+  public DMap(File mapFile, boolean preloadOffsets) 
+      throws IOException {
+    this(mapFile, preloadOffsets, false, DEFAULT_BLOCK_LIMIT);
+  }
+  
+  /**
+   * This constructor allows to customize both offset preloading and blocklimit.
+   * Values will not be loaded by default.
+   * 
+   * @param mapFile
+   * @param preloadOffsets
+   * @param blockLimit
+   * @throws IOException
+   */
+  public DMap(File mapFile, boolean preloadOffsets, int blockLimit) 
+      throws IOException {
+    this(mapFile, preloadOffsets, false, blockLimit);
+  }
+
+  /**
+   * Allows to customize offset preloading, values preloading and block limits.
+   * 
+   * @param mapFile
+   * @param preloadOffsets
+   * @param preloadValues
+   * @param blockLimit
+   * @throws IOException
+   */
   public DMap(File mapFile, boolean preloadOffsets, boolean preloadValues, int blockLimit) 
       throws IOException {
     mapFile_ = mapFile;
@@ -78,17 +129,18 @@ public class DMap {
       throw new IOException("Invalid version of DMap file encountered. Please fix.");
     }
 
+    loadAllBlocksKeyOffsets = preloadOffsets;
+    
     // Sorted first keys
     firstKeyInBlock_ = new TreeMap<>();
     blockOffsetInfo_ = new HashMap<>();
     blockTrailerBuffer = new HashMap<>();
+    blockTrailerKeys = new HashMap<>();
 
     size = raf_.readInt();
+        
+    loadKeyDetails();
     
-    if (preloadOffsets) {
-      loadKeyDetails();
-    }
-
     if (preloadValues) {      
       int numBlocks = getBlockCount();
       // override the maxBlockLimit_
@@ -103,50 +155,7 @@ public class DMap {
       logger_.debug("Preloaded all " + numBlocks + " blocks.");      
     }
   }
-  
-  private int getBlockCount() throws IOException {    
-    int trailerOffset = getGlobalTrailerOffet();
-    raf_.seek(trailerOffset);
-    return raf_.readInt();
-  }
 
-  private int getGlobalTrailerOffet() throws IOException {
-    raf_.seek(DEFAULT_LOC_FOR_TRAILER_OFFSET);
-    return raf_.readInt();
-  }
-  
-  private void loadKeyDetails() throws IOException {    
-    int numBlocks = getBlockCount();
-    logger_.info("Number of blocks in file : " + numBlocks);
-    int blockStart;
-    int blockTrailerStart;
-    int prevBlockTrailerStart = -1;
-    FileChannel fc;
-    MappedByteBuffer trailerBuffer;
-    for(int blockCount = 0; blockCount < numBlocks; ++blockCount) {
-      blockStart = raf_.readInt();
-      blockTrailerStart = raf_.readInt();
-      int firstKeySize = raf_.readInt();
-      byte[] firstKeyBytes = new byte[firstKeySize];
-      raf_.read(firstKeyBytes);
-      firstKeyInBlock_.put(new ByteArray(firstKeyBytes), blockStart);
-      blockOffsetInfo_.put(blockStart, blockTrailerStart);
-      if(blockCount > 0) {
-        fc = raf_.getChannel();
-        trailerBuffer = fc.map(MapMode.READ_ONLY, prevBlockTrailerStart, blockStart - prevBlockTrailerStart);
-        //logger_.debug("Trailer starting at : " + prevBlockTrailerStart + " and ending at " + blockStart + " has size of : " + (blockStart - prevBlockTrailerStart));
-        blockTrailerBuffer.put(prevBlockTrailerStart, trailerBuffer);        
-      }
-      prevBlockTrailerStart = blockTrailerStart;
-      //logger_.debug("Loaded block starting at: " + blockStart + " with trailer at : " + blockTrailerStart);
-    }
-    int globalTrailerOffset = getGlobalTrailerOffet();
-    fc = raf_.getChannel();
-    trailerBuffer = fc.map(MapMode.READ_ONLY, prevBlockTrailerStart, globalTrailerOffset-prevBlockTrailerStart);
-    //logger_.debug("Trailer starting at : " + prevBlockTrailerStart + " and ending at " + globalTrailerOffset + " has size of : " + (globalTrailerOffset - prevBlockTrailerStart));
-    blockTrailerBuffer.put(prevBlockTrailerStart, trailerBuffer);
-  }
-  
   /**
    * Get the number of entries in the map.
    * 
@@ -154,6 +163,18 @@ public class DMap {
    */
   public int size() {
     return size;
+  }
+
+  /**
+   * Get number of blocks in the map.
+   * 
+   * @return Number of blocks in the map.
+   * @throws IOException
+   */
+  public int getBlockCount() throws IOException {    
+    int trailerOffset = getGlobalTrailerOffet();
+    raf_.seek(trailerOffset);
+    return raf_.readInt();
   }
 
   /**
@@ -184,10 +205,8 @@ public class DMap {
     MappedByteBuffer mappedBuffer_;
     int blockStart = firstKeyInBlock_.get(firstKeyBytes);
     int blockTrailerStart = blockOffsetInfo_.get(blockStart);
-    // trailer buffer
-    mappedBuffer_ = blockTrailerBuffer.get(blockTrailerStart);
     // load the value offset
-    Integer valueOffset = getValueOffset(keyBytes, mappedBuffer_);    
+    Integer valueOffset = getValueOffset(keyBytes, blockTrailerStart);    
     if (valueOffset == null) {
       return null;
     }
@@ -209,22 +228,32 @@ public class DMap {
     return value;
   }
 
-  private synchronized Integer getValueOffset(ByteArray keyBytes, MappedByteBuffer mappedTrailerBuffer_) throws IOException {
-    mappedTrailerBuffer_.rewind();
-    int numKeysInBlock = mappedTrailerBuffer_.getInt();
-    // logger_.debug("NUM KEYS : "  + numKeysInBlock);
-    int valueOffset = -1;
-    for(int count=0; count<numKeysInBlock; count++) {
-      int keyLen = mappedTrailerBuffer_.getInt();
-      byte[] currentkey = new byte[keyLen];
-      mappedTrailerBuffer_.get(currentkey);
-      ByteArray currentKeyBytes = new ByteArray(currentkey);      
-      int offset = mappedTrailerBuffer_.getInt();
-      // logger_.debug("Comparing " + keyBytes + " and " + currentKeyBytes + " : " + keyBytes.compareTo(currentKeyBytes));
-      if(keyBytes.compareTo(currentKeyBytes) == 0) {
-        valueOffset = offset;
-        break;
+  private synchronized Integer getValueOffset(ByteArray keyBytes, int blockTrailerStartOffset) throws IOException {
+    int valueOffset = -1;    
+    if(!loadAllBlocksKeyOffsets) {
+      // time for linear search over the keys in block using mappedTrailer
+      MappedByteBuffer mappedTrailerBuffer_ = blockTrailerBuffer.get(blockTrailerStartOffset);
+      mappedTrailerBuffer_.rewind();
+      int numKeysInBlock = mappedTrailerBuffer_.getInt();
+      // logger_.debug("NUM KEYS : "  + numKeysInBlock);
+      for(int count=0; count<numKeysInBlock; count++) {
+        int keyLen = mappedTrailerBuffer_.getInt();
+        byte[] currentkey = new byte[keyLen];
+        mappedTrailerBuffer_.get(currentkey);
+        ByteArray currentKeyBytes = new ByteArray(currentkey);      
+        int offset = mappedTrailerBuffer_.getInt();
+        // logger_.debug("Comparing " + keyBytes + " and " + currentKeyBytes + " : " + keyBytes.compareTo(currentKeyBytes));
+        if(keyBytes.compareTo(currentKeyBytes) == 0) {
+          valueOffset = offset;
+          break;
+        }
       }
+    } else {
+      // just look up in the existing map
+      Map<ByteArray, Integer> tmpMap = blockTrailerKeys.get(blockTrailerStartOffset);
+      if(tmpMap != null && tmpMap.containsKey(keyBytes)) {
+        valueOffset = tmpMap.get(keyBytes);        
+      }      
     }
 
     // key doesnt exist in the block
@@ -232,5 +261,54 @@ public class DMap {
       return null;
     }    
     return valueOffset;
-  }  
+  }
+  
+  private int getGlobalTrailerOffet() throws IOException {
+    raf_.seek(DEFAULT_LOC_FOR_TRAILER_OFFSET);
+    return raf_.readInt();
+  }
+  
+  private void processBlockTrailer(int trailerStartOffset, int trailerSize) throws IOException {
+    FileChannel fc = raf_.getChannel();
+    MappedByteBuffer trailerBuffer = fc.map(MapMode.READ_ONLY, trailerStartOffset, trailerSize);
+    if(!loadAllBlocksKeyOffsets) {      
+      blockTrailerBuffer.put(trailerStartOffset, trailerBuffer);
+    } else {
+      int numKeysInBlock = trailerBuffer.getInt();
+      Map<ByteArray, Integer> tmpKeyOffsetMap = new HashMap<>();
+      for(int count=0; count<numKeysInBlock; count++) {
+        int keyLen = trailerBuffer.getInt();
+        byte[] currentkey = new byte[keyLen];
+        trailerBuffer.get(currentkey);
+        ByteArray currentKeyBytes = new ByteArray(currentkey);      
+        int offset = trailerBuffer.getInt();
+        tmpKeyOffsetMap.put(currentKeyBytes, offset);
+      }
+      blockTrailerKeys.put(trailerStartOffset, tmpKeyOffsetMap);
+    }
+  }
+  
+  private void loadKeyDetails() throws IOException {    
+    int numBlocks = getBlockCount();
+    logger_.info("Number of blocks in file : " + numBlocks);
+    int blockStart;
+    int blockTrailerStart;
+    int prevBlockTrailerStart = -1;
+
+    for(int blockCount = 0; blockCount < numBlocks; ++blockCount) {
+      blockStart = raf_.readInt();
+      blockTrailerStart = raf_.readInt();
+      int firstKeySize = raf_.readInt();
+      byte[] firstKeyBytes = new byte[firstKeySize];
+      raf_.read(firstKeyBytes);
+      firstKeyInBlock_.put(new ByteArray(firstKeyBytes), blockStart);
+      blockOffsetInfo_.put(blockStart, blockTrailerStart);
+      if(blockCount > 0) {
+        // compute the previous block's trailer size and store the information
+        processBlockTrailer(prevBlockTrailerStart, blockStart - prevBlockTrailerStart);               
+      }
+      prevBlockTrailerStart = blockTrailerStart;
+    }
+    processBlockTrailer(prevBlockTrailerStart, getGlobalTrailerOffet()-prevBlockTrailerStart);    
+  }
 }

@@ -1,6 +1,6 @@
 package de.jhoff.dmap.benchmark;
 
-import java.io.File;
+import java.io.File; 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Random;
@@ -8,22 +8,66 @@ import java.util.Random;
 import de.jhoff.dmap.DMap;
 import de.jhoff.dmap.DMapBuilder;
 
-
 public class DMapBenchmark {
-  public static void main(String[] args) throws IOException {
-    
-    int[] arrBlockSizes = new int[] {1024, 1048576}; // 1 KB, 1 MB
-    int[] arrKeys = new int[] {1<<10, 1<<15}; // number of keys to be used for benchmarking
-    
-    for(int bSize : arrBlockSizes) {
-      for(int keyValue : arrKeys) {
-        runDmapBenchmarkTest(bSize, keyValue);
+  static int[] arrBlockSizes = new int[] {1024, 1048576}; // 1 KB, 1 MB
+  static int[] arrKeys = new int[] {1<<10, 1<<15}; // number of keys to be used for benchmarking
+  static long[][] keyAddResults;
+  static long[][] mapReadResults;
+  static long[][] results;
+  static int[][] blocksUsed;
+
+  public static void main(String[] args) throws IOException {    
+    boolean[] arrPreloadOffsets = new boolean[]{true, false};
+
+    for(boolean preloadOffset : arrPreloadOffsets) {      
+      init();
+      for(int i=0;i<arrBlockSizes.length;i++) {
+        for(int j=0;j<arrKeys.length;j++) {
+          runDmapBenchmarkTest(i, j, preloadOffset);
+        }
+      }
+      printResults(preloadOffset);      
+    }    
+  }
+
+  private static void init() {
+    int n = arrBlockSizes.length;
+    int m = arrKeys.length;
+    results = new long[n][m];
+    keyAddResults = new long[n][m];
+    mapReadResults = new long[n][m];
+    blocksUsed = new int[n][m];
+  }
+
+  private static void printResults(boolean preloadOffset) {
+    System.out.println("================");
+    System.out.print("OFFSET PRELOADING : ");
+    if(preloadOffset) {
+       System.out.println("ENABLED");
+    } else {
+      System.out.println("DISABLED");
+    }
+
+    for(int i=0;i<arrBlockSizes.length;i++) {
+      System.out.println("BLOCK SIZE : " + arrBlockSizes[i]);
+      for(int j=0;j<arrKeys.length;j++) {
+        System.out.println("# OF KEYS : " + arrKeys[j]);
+        System.out.println("Time to add " + arrKeys[j] + " (int,int) pairs : " 
+            + keyAddResults[i][j] + "ms.");
+        System.out.println("Time to read map : " + mapReadResults[i][j] + "ms.");
+        System.out.println("Blocks used by map : " + blocksUsed[i][j]);
+        System.out.println("Time for random read of " + arrKeys[j] + " keys : " + 
+            results[i][j] + "ms.");
+        System.out.println();
       }
     }
-    
+    System.out.println("================");
   }
-  
-  private static void runDmapBenchmarkTest(int blockSize, int keys) throws IOException {
+
+  private static void runDmapBenchmarkTest(int bIdx, int kIdx, boolean preloadOffset) throws IOException {
+    int blockSize = arrBlockSizes[bIdx];
+    int keys = arrKeys[kIdx];
+    
     File mapFile = File.createTempFile("tmp", "dmap");
     mapFile.delete();
 
@@ -38,15 +82,16 @@ public class DMapBenchmark {
     dmapBuilder.build();
     long time2 = System.currentTimeMillis();
     long runTime = time2 - time1;
-    System.out.println("Added " + keys + " (int,int) pairs in " 
-        + runTime + "ms.");
+
+    keyAddResults[bIdx][kIdx] = runTime;
     long time3 = System.currentTimeMillis();
     
-    DMap dmap = new DMap(mapFile);    
+    DMap dmap = new DMap(mapFile, preloadOffset);    
     long time4 = System.currentTimeMillis();
     runTime = time4 - time3;
-    System.out.println("Read map in " + runTime + "ms.");
-    
+    mapReadResults[bIdx][kIdx] = runTime;
+    blocksUsed[bIdx][kIdx] = dmap.getBlockCount();
+
     long time5 = System.currentTimeMillis();    
     Random r = new Random();
     for (int i = 0; i < keys; ++i) {
@@ -57,9 +102,8 @@ public class DMapBenchmark {
     }
     long time6 = System.currentTimeMillis();
     runTime = time6 - time5;
-    System.out.println("Random read of " + keys + " keys with block size : "+ blockSize +" took " + 
-        runTime + "ms.");
-        
+    
+    results[bIdx][kIdx] = runTime;        
     mapFile.delete();
   }
 }
