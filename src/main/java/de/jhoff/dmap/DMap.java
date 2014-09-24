@@ -46,6 +46,9 @@ public class DMap {
   
   /** Mapping of block start offset to block trailer offset. */
   private Map<Integer, Integer> blockOffsetInfo_;
+
+  /** Mapping of BlockTrailer Start offset and block trailer mapped bytebuffer of trailer*/
+  private Map<Integer, MappedByteBuffer> blockTrailerBuffer;
   
   private Logger logger_ = LoggerFactory.getLogger(DMap.class);
     
@@ -78,7 +81,8 @@ public class DMap {
     // Sorted first keys
     firstKeyInBlock_ = new TreeMap<>();
     blockOffsetInfo_ = new HashMap<>();
-    
+    blockTrailerBuffer = new HashMap<>();
+
     size = raf_.readInt();
     
     if (preloadOffsets) {
@@ -100,26 +104,47 @@ public class DMap {
     }
   }
   
-  private int getBlockCount() throws IOException {
-    raf_.seek(DEFAULT_LOC_FOR_TRAILER_OFFSET);
-    int trailerOffset = raf_.readInt();
+  private int getBlockCount() throws IOException {    
+    int trailerOffset = getGlobalTrailerOffet();
     raf_.seek(trailerOffset);
+    return raf_.readInt();
+  }
+
+  private int getGlobalTrailerOffet() throws IOException {
+    raf_.seek(DEFAULT_LOC_FOR_TRAILER_OFFSET);
     return raf_.readInt();
   }
   
   private void loadKeyDetails() throws IOException {    
     int numBlocks = getBlockCount();
     logger_.info("Number of blocks in file : " + numBlocks);
+    int blockStart;
+    int blockTrailerStart;
+    int prevBlockTrailerStart = -1;
+    FileChannel fc;
+    MappedByteBuffer trailerBuffer;
     for(int blockCount = 0; blockCount < numBlocks; ++blockCount) {
-      int blockStart = raf_.readInt();
-      int blockTrailerStart = raf_.readInt();
+      blockStart = raf_.readInt();
+      blockTrailerStart = raf_.readInt();
       int firstKeySize = raf_.readInt();
       byte[] firstKeyBytes = new byte[firstKeySize];
       raf_.read(firstKeyBytes);
       firstKeyInBlock_.put(new ByteArray(firstKeyBytes), blockStart);
       blockOffsetInfo_.put(blockStart, blockTrailerStart);
-      logger_.debug("Loaded block starting at: " + blockStart + " with trailer at : " + blockTrailerStart);
+      if(blockCount > 0) {
+        fc = raf_.getChannel();
+        trailerBuffer = fc.map(MapMode.READ_ONLY, prevBlockTrailerStart, blockStart - prevBlockTrailerStart);
+        //logger_.debug("Trailer starting at : " + prevBlockTrailerStart + " and ending at " + blockStart + " has size of : " + (blockStart - prevBlockTrailerStart));
+        blockTrailerBuffer.put(prevBlockTrailerStart, trailerBuffer);        
+      }
+      prevBlockTrailerStart = blockTrailerStart;
+      //logger_.debug("Loaded block starting at: " + blockStart + " with trailer at : " + blockTrailerStart);
     }
+    int globalTrailerOffset = getGlobalTrailerOffet();
+    fc = raf_.getChannel();
+    trailerBuffer = fc.map(MapMode.READ_ONLY, prevBlockTrailerStart, globalTrailerOffset-prevBlockTrailerStart);
+    //logger_.debug("Trailer starting at : " + prevBlockTrailerStart + " and ending at " + globalTrailerOffset + " has size of : " + (globalTrailerOffset - prevBlockTrailerStart));
+    blockTrailerBuffer.put(prevBlockTrailerStart, trailerBuffer);
   }
   
   /**
@@ -145,7 +170,6 @@ public class DMap {
           "preloadOffsets has to be true in the constructor for now.");
     }
     ByteArray keyBytes = new ByteArray(key);
-    
     logger_.debug("get(" + keyBytes + ") - hash: " + keyBytes.hashCode());
     ByteArray[] keys = new ByteArray[firstKeyInBlock_.size()];
     firstKeyInBlock_.keySet().toArray(keys);
@@ -157,15 +181,18 @@ public class DMap {
       return null;
     }
 
+    MappedByteBuffer mappedBuffer_;
     int blockStart = firstKeyInBlock_.get(firstKeyBytes);
     int blockTrailerStart = blockOffsetInfo_.get(blockStart);
+    // trailer buffer
+    mappedBuffer_ = blockTrailerBuffer.get(blockTrailerStart);
     // load the value offset
-    Integer valueOffset = getValueOffset(keyBytes, blockTrailerStart);    
+    Integer valueOffset = getValueOffset(keyBytes, mappedBuffer_);    
     if (valueOffset == null) {
       return null;
     }
     
-    MappedByteBuffer mappedBuffer_ = cachedByteBuffers_.get(firstKeyBytes);
+    mappedBuffer_ = cachedByteBuffers_.get(firstKeyBytes);
     if(mappedBuffer_ == null) {
       FileChannel fc = raf_.getChannel();
       mappedBuffer_ = fc.map(MapMode.READ_ONLY, blockStart, blockTrailerStart - blockStart);
@@ -178,28 +205,28 @@ public class DMap {
     for (int i = 0; i < value.length; ++i) {
       value[i] = mappedBuffer_.get(valueOffset);
       ++valueOffset;
-    }
-    
+    }    
     return value;
   }
-  
-  private synchronized Integer getValueOffset(ByteArray keyBytes, int blockTrailerStart) throws IOException {
-    raf_.seek(blockTrailerStart);
-    int numKeysInBlock = raf_.readInt();
+
+  private synchronized Integer getValueOffset(ByteArray keyBytes, MappedByteBuffer mappedTrailerBuffer_) throws IOException {
+    mappedTrailerBuffer_.rewind();
+    int numKeysInBlock = mappedTrailerBuffer_.getInt();
+    // logger_.debug("NUM KEYS : "  + numKeysInBlock);
     int valueOffset = -1;
     for(int count=0; count<numKeysInBlock; count++) {
-      int keyLen = raf_.readInt();
+      int keyLen = mappedTrailerBuffer_.getInt();
       byte[] currentkey = new byte[keyLen];
-      raf_.read(currentkey);
+      mappedTrailerBuffer_.get(currentkey);
       ByteArray currentKeyBytes = new ByteArray(currentkey);      
-      int offset = raf_.readInt();
-      logger_.debug("Comparing " + keyBytes + " and " + currentKeyBytes + " : " + keyBytes.compareTo(currentKeyBytes));
+      int offset = mappedTrailerBuffer_.getInt();
+      // logger_.debug("Comparing " + keyBytes + " and " + currentKeyBytes + " : " + keyBytes.compareTo(currentKeyBytes));
       if(keyBytes.compareTo(currentKeyBytes) == 0) {
         valueOffset = offset;
         break;
       }
     }
- 
+
     // key doesnt exist in the block
     if(valueOffset == -1) {
       return null;
