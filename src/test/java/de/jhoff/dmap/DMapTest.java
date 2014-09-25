@@ -36,7 +36,7 @@ public class DMapTest {
     }
     dmapBuilder.build();
 
-    DMap dmap = new DMap(tmpFile,false);
+    DMap dmap = new DMap.Loader(tmpFile).load();
     for (int i = 0; i < count; ++i) {
       byte[] value = dmap.get(ByteUtils.getBytes(i));
       assertEquals(i, ByteBuffer.wrap(value).getInt());
@@ -58,7 +58,9 @@ public class DMapTest {
     }
     dmapBuilder.build();
 
-    DMap dmap = new DMap(tmpFile);
+    DMap dmap = new DMap.Loader(tmpFile)
+                        .preloadOffsets()
+                        .load();
     for (int i = 0; i < count; ++i) {
       byte[] value = dmap.get(ByteUtils.getBytes(i));
       assertEquals(i, ByteBuffer.wrap(value).getInt());
@@ -85,7 +87,9 @@ public class DMapTest {
     }
     dmapBuilder.build();
 
-    DMap dmap = new DMap(tmpFile);
+    DMap dmap = new DMap.Loader(tmpFile)
+                        .preloadOffsets()
+                        .load();
     for (Entry<Integer, Integer> e : kvs.entrySet()) {
       byte[] value = dmap.get(ByteUtils.getBytes(e.getKey()));
       assertEquals(e.getValue().intValue(), ByteBuffer.wrap(value).getInt());
@@ -112,7 +116,7 @@ public class DMapTest {
     }
     dmapBuilder.build();
 
-    DMap dmap = new DMap(tmpFile, false);
+    DMap dmap = new DMap.Loader(tmpFile).load();
     for (Entry<Integer, Integer> e : kvs.entrySet()) {
       byte[] value = dmap.get(ByteUtils.getBytes(e.getKey()));
       assertEquals(e.getValue().intValue(), ByteBuffer.wrap(value).getInt());
@@ -142,7 +146,9 @@ public class DMapTest {
     int threadCount = 100;
     ExecutorService es = Executors.newFixedThreadPool(threadCount);
     List<Future<Boolean>> results = new ArrayList<>(100);
-    DMap dmap = new DMap(tmpFile);
+    DMap dmap = new DMap.Loader(tmpFile)
+                        .preloadOffsets()
+                        .load();
     for (int t = 0; t < threadCount; ++t) {
       Reader reader = new Reader(dmap, kvs);
       Future<Boolean> result = es.submit(reader);
@@ -174,7 +180,7 @@ public class DMapTest {
     int threadCount = 100;
     ExecutorService es = Executors.newFixedThreadPool(threadCount);
     List<Future<Boolean>> results = new ArrayList<>(100);
-    DMap dmap = new DMap(tmpFile, false);
+    DMap dmap = new DMap.Loader(tmpFile).load();
     for (int t = 0; t < threadCount; ++t) {
       Reader reader = new Reader(dmap, kvs);
       Future<Boolean> result = es.submit(reader);

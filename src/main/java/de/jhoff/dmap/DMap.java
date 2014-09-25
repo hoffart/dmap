@@ -48,8 +48,11 @@ public class DMap {
   private Map<Integer, Integer> blockOffsetInfo_;
 
   /** Flag to enable/disable preloading of key offset pairs. */
-  private boolean loadAllBlocksKeyOffsets;
-  
+  private boolean preloadAllKeyOffsets;
+
+  /** Flag to enable/disable preloading of all the values. */
+  private boolean preloadAllValues;
+
   /** Mapping of BlockTrailer Start offset and block trailer mapped bytebuffer of trailer. */
   private Map<Integer, MappedByteBuffer> blockTrailerBuffer;
   
@@ -57,70 +60,13 @@ public class DMap {
   private Map<Integer, Map<ByteArray, Integer>> blockTrailerKeys;
   
   private Logger logger_ = LoggerFactory.getLogger(DMap.class);
-    
-  /**
-   * Default constructor, will preload key/offsets but not the values 
-   * and limits number of blocks loaded to default of 3.
-   * 
-   * @param mapFile Map file created by DMapBuilder
-   * @throws IOException 
-   */
-  public DMap(File mapFile) throws IOException {
-    this(mapFile, true, false, DEFAULT_BLOCK_LIMIT);
-  }
-  
-  /**
-   * Creates a DMap for given mapFile and defaults to *blockLimit* number of blocks.
-   * This constructor will preload all key-offset pairs but not the values.
-   * 
-   * @param mapFile
-   * @param blockLimit
-   * @throws IOException
-   */
-  public DMap(File mapFile, int blockLimit) throws IOException{
-    this(mapFile, true, false, blockLimit);
-  }
-  
-  /**
-   * DMap constructor that allows to customize offset preloading.
-   * Limits no. of blocks to default value 3 and does not load values in the memory.
-   * 
-   * @param mapFile
-   * @param preloadOffsets
-   * @throws IOException
-   */
-  public DMap(File mapFile, boolean preloadOffsets) 
-      throws IOException {
-    this(mapFile, preloadOffsets, false, DEFAULT_BLOCK_LIMIT);
-  }
-  
-  /**
-   * This constructor allows to customize both offset preloading and blocklimit.
-   * Values will not be loaded by default.
-   * 
-   * @param mapFile
-   * @param preloadOffsets
-   * @param blockLimit
-   * @throws IOException
-   */
-  public DMap(File mapFile, boolean preloadOffsets, int blockLimit) 
-      throws IOException {
-    this(mapFile, preloadOffsets, false, blockLimit);
-  }
 
-  /**
-   * Allows to customize offset preloading, values preloading and block limits.
-   * 
-   * @param mapFile
-   * @param preloadOffsets
-   * @param preloadValues
-   * @param blockLimit
-   * @throws IOException
-   */
-  public DMap(File mapFile, boolean preloadOffsets, boolean preloadValues, int blockLimit) 
-      throws IOException {
-    mapFile_ = mapFile;
-    maxBlockLimit_ = blockLimit;
+  private DMap(Loader loader) throws IOException {
+    mapFile_ = loader.mapFile_;
+    preloadAllKeyOffsets = loader.preloadOffsets_;
+    preloadAllValues = loader.preloadValues_;
+    maxBlockLimit_ = loader.maxBlockLimit_;
+
     cachedByteBuffers_ = new CachingHashMap<>(maxBlockLimit_);
     raf_ = new RandomAccessFile(mapFile_, "r");
 
@@ -128,10 +74,8 @@ public class DMap {
     if(version != DMAP_VERSION) {
       throw new IOException("Invalid version of DMap file encountered. Please fix.");
     }
-
-    loadAllBlocksKeyOffsets = preloadOffsets;
     
-    // Sorted first keys
+ // Sorted first keys
     firstKeyInBlock_ = new TreeMap<>();
     blockOffsetInfo_ = new HashMap<>();
     blockTrailerBuffer = new HashMap<>();
@@ -141,7 +85,7 @@ public class DMap {
         
     loadKeyDetails();
     
-    if (preloadValues) {      
+    if (preloadAllValues) {
       int numBlocks = getBlockCount();
       // override the maxBlockLimit_
       cachedByteBuffers_ = new CachingHashMap<>(numBlocks);
@@ -153,6 +97,71 @@ public class DMap {
         cachedByteBuffers_.put(firstKey, mappedBuffer_);
       }
       logger_.debug("Preloaded all " + numBlocks + " blocks.");      
+    }
+
+  }
+
+  /*  This public Loader class allows creation of customized DMap instance.
+   *  This is the Only way to create a DMap instance.
+   */
+  public static class Loader {
+    private boolean preloadOffsets_;
+    private boolean preloadValues_;
+    private int maxBlockLimit_;
+    private File mapFile_;
+
+    /**
+     * A Loader constructor that takes a File parameter to be loaded into DMap.
+     *
+     * @param mapFile A File instance to be loaded.
+     */
+    public Loader(File mapFile) {
+      mapFile_ = mapFile;
+      maxBlockLimit_ = DEFAULT_BLOCK_LIMIT;
+      // by default, both keyoffset loading and value loading will be disabled
+      preloadOffsets_ = false;
+      preloadValues_ = false;
+    }
+
+    /**
+     * This method enables key-offset preloading during DMap instantiation
+     *
+     * @return The current Loader instance.
+     */
+    public Loader preloadOffsets() {
+      this.preloadOffsets_ = true;
+      return this;
+    }
+
+    /**
+     * This method enables values preloading during DMap instantiation
+     *
+     * @return The current Loader instance.
+     */
+    public Loader preloadValues() {
+      this.preloadValues_ = true;
+      return this;
+    }
+
+    /**
+     * This method sets the DMap block limit to specified value
+     *
+     * @return The current Loader instance.
+     */
+    public Loader setMaxBlockLimit(int value) {
+      this.maxBlockLimit_ = value;
+      return this;
+    }
+
+    /**
+     * The parameter-less load method creates an instance of DMap.
+     * This method needs to be called once all DMap customizations are done.
+     *
+     * @return A DMap instance.
+     * @throws IOException
+     */
+    public DMap load() throws IOException {
+      return new DMap(this);
     }
   }
 
@@ -237,7 +246,7 @@ public class DMap {
    */
   private Integer getValueOffset(ByteArray keyBytes, int blockTrailerStartOffset) throws IOException {
     int valueOffset = -1;    
-    if(!loadAllBlocksKeyOffsets) {
+    if(!preloadAllKeyOffsets) {
       // time for linear search over the keys in block using mappedTrailer
       MappedByteBuffer mappedTrailerBuffer_ = blockTrailerBuffer.get(blockTrailerStartOffset);
       int pos = 0;
@@ -286,7 +295,7 @@ public class DMap {
   private void processBlockTrailer(int trailerStartOffset, int trailerSize) throws IOException {
     FileChannel fc = raf_.getChannel();
     MappedByteBuffer trailerBuffer = fc.map(MapMode.READ_ONLY, trailerStartOffset, trailerSize);
-    if(!loadAllBlocksKeyOffsets) {      
+    if(!preloadAllKeyOffsets) {
       blockTrailerBuffer.put(trailerStartOffset, trailerBuffer);
     } else {
       int numKeysInBlock = trailerBuffer.getInt();
