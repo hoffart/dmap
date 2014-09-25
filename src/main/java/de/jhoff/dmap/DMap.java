@@ -228,25 +228,40 @@ public class DMap {
     return value;
   }
 
-  private synchronized Integer getValueOffset(ByteArray keyBytes, int blockTrailerStartOffset) throws IOException {
+  /* NOTE:
+   *
+   *    When Offset preloading is disabled, this method does a linear search over all the keys in the given block
+   * to find the matching key and retrieve the value offset associated with the key.
+   *    Searching single block DMap contaning N keys will be slower than Searching M-Blocks DMap with each block containing
+   *    a subset of key.
+   */
+  private Integer getValueOffset(ByteArray keyBytes, int blockTrailerStartOffset) throws IOException {
     int valueOffset = -1;    
     if(!loadAllBlocksKeyOffsets) {
       // time for linear search over the keys in block using mappedTrailer
       MappedByteBuffer mappedTrailerBuffer_ = blockTrailerBuffer.get(blockTrailerStartOffset);
-      mappedTrailerBuffer_.rewind();
-      int numKeysInBlock = mappedTrailerBuffer_.getInt();
-      // logger_.debug("NUM KEYS : "  + numKeysInBlock);
+      int pos = 0;
+      // load key count - int
+      int numKeysInBlock = mappedTrailerBuffer_.getInt(pos);
+      pos+=4;
+
+      // start search over keys
       for(int count=0; count<numKeysInBlock; count++) {
-        int keyLen = mappedTrailerBuffer_.getInt();
+        int keyLen = mappedTrailerBuffer_.getInt(pos);
+        pos+=4;
         byte[] currentkey = new byte[keyLen];
-        mappedTrailerBuffer_.get(currentkey);
+        for(int byteCount=0;byteCount<keyLen;byteCount++) {
+          // increment by 1 since individual bytes are read
+          currentkey[byteCount] = mappedTrailerBuffer_.get(pos++);
+        }
         ByteArray currentKeyBytes = new ByteArray(currentkey);      
-        int offset = mappedTrailerBuffer_.getInt();
+        int offset = mappedTrailerBuffer_.getInt(pos);
         // logger_.debug("Comparing " + keyBytes + " and " + currentKeyBytes + " : " + keyBytes.compareTo(currentKeyBytes));
         if(keyBytes.compareTo(currentKeyBytes) == 0) {
           valueOffset = offset;
           break;
         }
+        pos+=4;
       }
     } else {
       // just look up in the existing map
