@@ -6,14 +6,14 @@ import java.util.Arrays;
  * Wrapper for a byte[] to be used as key in a Map.
  */
 public class ByteArray implements Comparable<ByteArray> {
-  private byte[] bytes_;
-  
+  private final byte[] bytes_;
+
   public ByteArray(byte[] bytes) {
     bytes_ = bytes;
   }
-  
+
   public byte[] getBytes() {
-    return bytes_;       
+    return bytes_;
   }
 
   @Override
@@ -37,7 +37,6 @@ public class ByteArray implements Comparable<ByteArray> {
     if (bytes_.length != bBytes.length) {
       return bytes_.length - bBytes.length;
     } else {
-      // TODO: this loop assumes that both ByteArrays would be of same length. Should be min(bytes.length, b.length)?
       for (int i = 0; i < bytes_.length; ++i) {
         // comparing unsigned ints instead of signed bytes
         int maskedThis = (bytes_[i] & 0xff);
@@ -50,7 +49,8 @@ public class ByteArray implements Comparable<ByteArray> {
       return 0;
     }
   }
-  
+
+  @Override
   public String toString() {
     return Arrays.toString(bytes_);
   }

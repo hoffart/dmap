@@ -13,12 +13,12 @@ import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import de.jhoff.dmap.util.map.CachingHashMap;
 import de.jhoff.dmap.util.ByteArray;
 import de.jhoff.dmap.util.ByteArrayUtils;
+import de.jhoff.dmap.util.map.CachingHashMap;
 
 /**
- * Disk-backed implementation of a very simple Map that supports only 
+ * Disk-backed implementation of a very simple Map that supports only
  */
 public class DMap {
   private static final int DMAP_VERSION = 1;
@@ -29,39 +29,42 @@ public class DMap {
   private static final int DEFAULT_LOC_FOR_TRAILER_OFFSET = 12;
 
   /** Map file with data. */
-  private File mapFile_;
-  private RandomAccessFile raf_;
-    
+  private final File mapFile_;
+  private final RandomAccessFile raf_;
+
   /** Number of entries in the map. */
-  private int size;
+  private final int size;
 
   /** Maximum number of blocks that can be used by dmap at a time. */
-  private int maxBlockLimit_;
+  private final int maxBlockLimit_;
 
   /** First Key - Mapped block pair. */
   private Map<ByteArray, MappedByteBuffer>  cachedByteBuffers_;
 
   /** Mapping of first key of block to block's start offset. */
-  private Map<ByteArray, Integer> firstKeyInBlock_;
-  
+  private final Map<ByteArray, Integer> firstKeyInBlock_;
+
   /** Mapping of block start offset to block trailer offset. */
-  private Map<Integer, Integer> blockOffsetInfo_;
+  private final Map<Integer, Integer> blockOffsetInfo_;
 
   /** Flag to enable/disable preloading of key offset pairs. */
-  private boolean preloadAllKeyOffsets;
+  private final boolean preloadAllKeyOffsets;
 
   /** Flag to enable/disable preloading of all the values. */
-  private boolean preloadAllValues;
+  private final boolean preloadAllValues;
 
   /** Mapping of BlockTrailer Start offset and block trailer mapped bytebuffer of trailer. */
-  private Map<Integer, MappedByteBuffer> blockTrailerBuffer;
-  
-  /** Mapping of BlockTrailer start offset and all key-offset pairs info contained in the trailer. */
-  private Map<Integer, Map<ByteArray, Integer>> blockTrailerKeys;
-  
-  private Logger logger_ = LoggerFactory.getLogger(DMap.class);
+  private final Map<Integer, MappedByteBuffer> blockTrailerBuffer;
 
-  private DMap(Loader loader) throws IOException {
+  /** Mapping of BlockTrailer start offset and all key-offset pairs info contained in the trailer. */
+  private final Map<Integer, Map<ByteArray, Integer>> blockTrailerKeys;
+
+  /** First keys of all the blocks present in the dmap loaded once. */
+  private ByteArray[] firstKeys;
+
+  private final Logger logger_ = LoggerFactory.getLogger(DMap.class);
+
+  private DMap(Builder loader) throws IOException {
     mapFile_ = loader.mapFile_;
     preloadAllKeyOffsets = loader.preloadOffsets_;
     preloadAllValues = loader.preloadValues_;
@@ -74,17 +77,17 @@ public class DMap {
     if(version != DMAP_VERSION) {
       throw new IOException("Invalid version of DMap file encountered. Please fix.");
     }
-    
- // Sorted first keys
+
+    // Sorted first keys
     firstKeyInBlock_ = new TreeMap<>();
     blockOffsetInfo_ = new HashMap<>();
     blockTrailerBuffer = new HashMap<>();
     blockTrailerKeys = new HashMap<>();
 
     size = raf_.readInt();
-        
+
     loadKeyDetails();
-    
+
     if (preloadAllValues) {
       int numBlocks = getBlockCount();
       // override the maxBlockLimit_
@@ -94,28 +97,29 @@ public class DMap {
         int blockTrailerStart = firstKeyInBlock_.get(blockStart);
         FileChannel fc = raf_.getChannel();
         MappedByteBuffer mappedBuffer_ = fc.map(MapMode.READ_ONLY, blockStart, blockTrailerStart - blockStart);
+        mappedBuffer_.load();
         cachedByteBuffers_.put(firstKey, mappedBuffer_);
       }
-      logger_.debug("Preloaded all " + numBlocks + " blocks.");      
+      logger_.debug("Preloaded all " + numBlocks + " blocks.");
     }
 
   }
 
-  /*  This public Loader class allows creation of customized DMap instance.
+  /*  This public Builder class allows creation of customized DMap instance.
    *  This is the Only way to create a DMap instance.
    */
-  public static class Loader {
+  public static class Builder {
     private boolean preloadOffsets_;
     private boolean preloadValues_;
     private int maxBlockLimit_;
-    private File mapFile_;
+    private final File mapFile_;
 
     /**
      * A Loader constructor that takes a File parameter to be loaded into DMap.
      *
      * @param mapFile A File instance to be loaded.
      */
-    public Loader(File mapFile) {
+    public Builder(File mapFile) {
       mapFile_ = mapFile;
       maxBlockLimit_ = DEFAULT_BLOCK_LIMIT;
       // by default, both keyoffset loading and value loading will be disabled
@@ -128,7 +132,7 @@ public class DMap {
      *
      * @return The current Loader instance.
      */
-    public Loader preloadOffsets() {
+    public Builder preloadOffsets() {
       this.preloadOffsets_ = true;
       return this;
     }
@@ -138,7 +142,7 @@ public class DMap {
      *
      * @return The current Loader instance.
      */
-    public Loader preloadValues() {
+    public Builder preloadValues() {
       this.preloadValues_ = true;
       return this;
     }
@@ -148,7 +152,7 @@ public class DMap {
      *
      * @return The current Loader instance.
      */
-    public Loader setMaxBlockLimit(int value) {
+    public Builder setMaxBlockLimit(int value) {
       this.maxBlockLimit_ = value;
       return this;
     }
@@ -180,31 +184,23 @@ public class DMap {
    * @return Number of blocks in the map.
    * @throws IOException
    */
-  public int getBlockCount() throws IOException {    
+  public int getBlockCount() throws IOException {
     int trailerOffset = getGlobalTrailerOffet();
     raf_.seek(trailerOffset);
     return raf_.readInt();
   }
 
   /**
-   * Get byte[] value for key. TODO this could be made more efficient
-   * by returning a reference to the original byte array in memory!
+   * Get byte[] value for key.
    * 
    * @param key Key to retrieve the value for.
    * @return  byte[] associated with key.
    */
   public byte[] get(byte[] key) throws IOException {
-    if (firstKeyInBlock_ == null) {
-      // TODO implement on-disk search.
-      throw new IllegalStateException(
-          "preloadOffsets has to be true in the constructor for now.");
-    }
     ByteArray keyBytes = new ByteArray(key);
     logger_.debug("get(" + keyBytes + ") - hash: " + keyBytes.hashCode());
-    ByteArray[] keys = new ByteArray[firstKeyInBlock_.size()];
-    firstKeyInBlock_.keySet().toArray(keys);
     // identify the block containing the given key using first key information.
-    ByteArray firstKeyBytes = ByteArrayUtils.findMaxElementLessThanTarget(keys, keyBytes);    
+    ByteArray firstKeyBytes = ByteArrayUtils.findMaxElementLessThanTarget(firstKeys, keyBytes);
 
     if(firstKeyBytes == null) {
       // key not in range (less than start key)
@@ -215,16 +211,16 @@ public class DMap {
     int blockStart = firstKeyInBlock_.get(firstKeyBytes);
     int blockTrailerStart = blockOffsetInfo_.get(blockStart);
     // load the value offset
-    Integer valueOffset = getValueOffset(keyBytes, blockTrailerStart);    
+    Integer valueOffset = getValueOffset(keyBytes, blockTrailerStart);
     if (valueOffset == null) {
       return null;
     }
-    
+
     mappedBuffer_ = cachedByteBuffers_.get(firstKeyBytes);
     if(mappedBuffer_ == null) {
       FileChannel fc = raf_.getChannel();
       mappedBuffer_ = fc.map(MapMode.READ_ONLY, blockStart, blockTrailerStart - blockStart);
-      cachedByteBuffers_.put(firstKeyBytes, mappedBuffer_);      
+      cachedByteBuffers_.put(firstKeyBytes, mappedBuffer_);
     }
 
     int valueLength = mappedBuffer_.getInt(valueOffset);
@@ -233,7 +229,7 @@ public class DMap {
     for (int i = 0; i < value.length; ++i) {
       value[i] = mappedBuffer_.get(valueOffset);
       ++valueOffset;
-    }    
+    }
     return value;
   }
 
@@ -245,7 +241,7 @@ public class DMap {
    *    a subset of key.
    */
   private Integer getValueOffset(ByteArray keyBytes, int blockTrailerStartOffset) throws IOException {
-    int valueOffset = -1;    
+    int valueOffset = -1;
     if(!preloadAllKeyOffsets) {
       // time for linear search over the keys in block using mappedTrailer
       MappedByteBuffer mappedTrailerBuffer_ = blockTrailerBuffer.get(blockTrailerStartOffset);
@@ -263,7 +259,7 @@ public class DMap {
           // increment by 1 since individual bytes are read
           currentkey[byteCount] = mappedTrailerBuffer_.get(pos++);
         }
-        ByteArray currentKeyBytes = new ByteArray(currentkey);      
+        ByteArray currentKeyBytes = new ByteArray(currentkey);
         int offset = mappedTrailerBuffer_.getInt(pos);
         // logger_.debug("Comparing " + keyBytes + " and " + currentKeyBytes + " : " + keyBytes.compareTo(currentKeyBytes));
         if(keyBytes.compareTo(currentKeyBytes) == 0) {
@@ -276,22 +272,22 @@ public class DMap {
       // just look up in the existing map
       Map<ByteArray, Integer> tmpMap = blockTrailerKeys.get(blockTrailerStartOffset);
       if(tmpMap != null && tmpMap.containsKey(keyBytes)) {
-        valueOffset = tmpMap.get(keyBytes);        
-      }      
+        valueOffset = tmpMap.get(keyBytes);
+      }
     }
 
     // key doesnt exist in the block
     if(valueOffset == -1) {
       return null;
-    }    
+    }
     return valueOffset;
   }
-  
+
   private int getGlobalTrailerOffet() throws IOException {
     raf_.seek(DEFAULT_LOC_FOR_TRAILER_OFFSET);
     return raf_.readInt();
   }
-  
+
   private void processBlockTrailer(int trailerStartOffset, int trailerSize) throws IOException {
     FileChannel fc = raf_.getChannel();
     MappedByteBuffer trailerBuffer = fc.map(MapMode.READ_ONLY, trailerStartOffset, trailerSize);
@@ -304,15 +300,15 @@ public class DMap {
         int keyLen = trailerBuffer.getInt();
         byte[] currentkey = new byte[keyLen];
         trailerBuffer.get(currentkey);
-        ByteArray currentKeyBytes = new ByteArray(currentkey);      
+        ByteArray currentKeyBytes = new ByteArray(currentkey);
         int offset = trailerBuffer.getInt();
         tmpKeyOffsetMap.put(currentKeyBytes, offset);
       }
       blockTrailerKeys.put(trailerStartOffset, tmpKeyOffsetMap);
     }
   }
-  
-  private void loadKeyDetails() throws IOException {    
+
+  private void loadKeyDetails() throws IOException {
     int numBlocks = getBlockCount();
     logger_.info("Number of blocks in file : " + numBlocks);
     int blockStart;
@@ -329,10 +325,14 @@ public class DMap {
       blockOffsetInfo_.put(blockStart, blockTrailerStart);
       if(blockCount > 0) {
         // compute the previous block's trailer size and store the information
-        processBlockTrailer(prevBlockTrailerStart, blockStart - prevBlockTrailerStart);               
+        processBlockTrailer(prevBlockTrailerStart, blockStart - prevBlockTrailerStart);
       }
       prevBlockTrailerStart = blockTrailerStart;
     }
-    processBlockTrailer(prevBlockTrailerStart, getGlobalTrailerOffet()-prevBlockTrailerStart);    
+    processBlockTrailer(prevBlockTrailerStart, getGlobalTrailerOffet()-prevBlockTrailerStart);
+
+    // load all the first keys for binary search during get()
+    firstKeys = new ByteArray[firstKeyInBlock_.size()];
+    firstKeyInBlock_.keySet().toArray(firstKeys);
   }
 }

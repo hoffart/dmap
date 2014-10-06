@@ -86,7 +86,7 @@ public class DMapBenchmark {
     keyAddResults[bIdx][kIdx] = runTime;
     long time3 = System.currentTimeMillis();
 
-    DMap.Loader loader = new DMap.Loader(mapFile);
+    DMap.Builder loader = new DMap.Builder(mapFile);
     if(preloadOffset) {
       loader = loader.preloadOffsets();
     }
