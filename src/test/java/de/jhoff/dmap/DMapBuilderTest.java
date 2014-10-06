@@ -71,6 +71,10 @@ public class DMapBuilderTest {
     assertEquals(16, raf.readInt());
     // start of first blocks trailer (should not be 26 for given block size 10)
     assertEquals(24, raf.readInt());
+    // next should be the length of the first key (integer)
+    assertEquals(4, raf.readInt());
+    // followed by the key itself (int again)
+    assertEquals(0, raf.readInt());
     // start of 2nd block
     assertEquals(40, raf.readInt());
     // start of 2nd blocks trailer
@@ -122,14 +126,16 @@ public class DMapBuilderTest {
     }     
 
     dmapBuilder.build();     
-
     RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
-    // verify 3rd blocks offset info stored in global trailer (starts at 236)
-    raf.seek(256);
+    // verify 3rd blocks offset info stored in global trailer (starts at 272)
+    raf.seek(272);
     assertEquals(104, raf.readInt());
     // start of 3rd blocks trailer
     assertEquals(120, raf.readInt());
-
+    // the length of first key in 3rd block should be 4
+    assertEquals(4, raf.readInt());
+    // the first key itself should be 5.
+    assertEquals(5, raf.readInt());
     // check for key-values in block 1
     raf.seek(20);
     assertEquals(1, raf.readInt());
