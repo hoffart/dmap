@@ -24,13 +24,24 @@ on startup.
 File mapFile = new File("FILEPATH");
 byte[] key = ByteBuffer.allocate(4).putInt(2).array();
 byte[] value = ByteBuffer.allocate(4).putInt(23).array();
+
+/* The following DMapBuilder constructor creates a map file
+ * with default 1 MB block size. 
+ * 
+ * Block size can be customized using the other version:
+ * DMapBuilder(mapFile, blockSize)
+ */
 DMapBuilder dmapBuilder = new DMapBuilder(mapFile);
 dmapBuilder.add(key, value);
 // Finalize map.
 dmapBuilder.build();
 
+// Load DMap from Builder (Configurable)
+DMap dmap = new DMap.Builder(mapFile)
+    .preloadOffsets() // Preload all key-related information
+    .preloadValues() // Load all key-values during the map instantiation
+    .load();
 // Get key.
-DMap dmap = new DMap(mapFile);
 byte[] retrieved = dmap.get(key); 
 ```
 
