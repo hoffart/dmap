@@ -158,13 +158,13 @@ public class DMap {
     }
 
     /**
-     * The parameter-less load method creates an instance of DMap.
+     * The parameter-less build method creates an instance of DMap.
      * This method needs to be called once all DMap customizations are done.
      *
      * @return A DMap instance.
      * @throws IOException
      */
-    public DMap load() throws IOException {
+    public DMap build() throws IOException {
       return new DMap(this);
     }
   }

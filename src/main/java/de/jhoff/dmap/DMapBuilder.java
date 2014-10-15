@@ -37,7 +37,7 @@ public class DMapBuilder {
   private static final int DEFAULT_BLOCK_SIZE = 1048576;
 
   /** Current block size for the file*/
-  private int blockSize;
+  private int blockSize_;
 
   /** Map file to write to. */
   private File mapFile_;
@@ -53,8 +53,8 @@ public class DMapBuilder {
 
   /** Keep track of number of entries retrieved from original file */
   private int entriesCount_;
-  
-  private Logger logger_ = LoggerFactory.getLogger(DMapBuilder.class);
+
+  private final Logger logger_ = LoggerFactory.getLogger(DMapBuilder.class);
 
   public DMapBuilder(File mapFile) throws IOException {
     this(mapFile, DEFAULT_BLOCK_SIZE);
@@ -63,31 +63,31 @@ public class DMapBuilder {
   /**
    * 
    * @param mapFile Map File instance.
-   * @param 
+   * @param blockSize Size of a block (in bytes).
    * @throws IOException
    */
-  public DMapBuilder(File mapFile, int block) throws IOException {
+  public DMapBuilder(File mapFile, int blockSize) throws IOException {
     boolean success = mapFile.createNewFile();
     if (success) {
-      blockSize = block;
+      blockSize_ = blockSize;
       mapFile_ = mapFile;
       tmpMapFile_ = new File("tmp_" + mapFile.getName());
       success = tmpMapFile_.createNewFile();
       if(success) {
         tmpOutput_ = new DataOutputStream(
             new BufferedOutputStream(
-              new FileOutputStream(tmpMapFile_), 1024));
+                new FileOutputStream(tmpMapFile_), 1024));
       } else {
         throw new IOException("Error creating intermediate file: " + tmpMapFile_ + ", cannot write.");
       }
-      
+
       output_ = new DataOutputStream(
           new BufferedOutputStream(
-              new FileOutputStream(mapFile_), 1024));            
+              new FileOutputStream(mapFile_), 1024));
     } else {
       throw new IOException("Output map file already exists at: " + mapFile
           + ", cannot write.");
-    }    
+    }
   }
 
   public void add(byte[] key, byte[] value) throws IOException {
@@ -107,19 +107,19 @@ public class DMapBuilder {
     byte[] key;
     byte[] value;
     long currentOffset = 0;
-    
+
     try {
       logger_.debug("Keys to process: " + entriesCount_);
       for(int i=0;i<entriesCount_;i++) {
         int keyLen = raf.readInt();
         int valLen = raf.readInt();
-        
-        key = new byte[keyLen];      
-        raf.read(key);      
+
+        key = new byte[keyLen];
+        raf.read(key);
         if(tmpKeyOffsetMap.containsKey(new ByteArray(key))) {
           throw new IOException("Duplicate key encountered: " + key);
         }
-        
+
         tmpKeyOffsetMap.put(new ByteArray(key), currentOffset);
         // ignore the value byte sequence (for the time being) and move to next record start pos
         currentOffset = raf.getFilePointer() + valLen;
@@ -131,20 +131,20 @@ public class DMapBuilder {
       // global header - version, entries count, block size, trailer offset
       output_.writeInt(VERSION);
       output_.writeInt(tmpKeyOffsetMap.size());
-      output_.writeInt(blockSize);
+      output_.writeInt(blockSize_);
       // insert placeholder for trailer offset
       output_.writeInt(0);
-      
+
       List<ByteArray> allKeys = new ArrayList<>(tmpKeyOffsetMap.keySet());
-      Collections.sort(allKeys);    
+      Collections.sort(allKeys);
       logger_.info("Writing map for " + allKeys.size() + " keys.");
 
-      int globalOffset = 16;        
+      int globalOffset = 16;
       int currentBlockOffset = 0;
-      int remainingBytes = blockSize;
+      int remainingBytes = blockSize_;
       ByteArray firstKey = null;
-      
-      // Map to store block-level key-offset pairs (to be written to each block trailer) 
+
+      // Map to store block-level key-offset pairs (to be written to each block trailer)
       Map<ByteArray, Integer> blockKeyOffset_ = new HashMap<>();
       // Map to store blockStart-blockTrailerStart pair (to be written to global trailer)
       Map<Integer, Integer> blockTrailerOffsets = new HashMap<>();
@@ -164,26 +164,26 @@ public class DMapBuilder {
 
         int dataLength = 4 + value.length;
 
-        if(dataLength > blockSize) {
-          throw new IOException("Data size ("+ dataLength +" bytes) greater than specified block size(" + blockSize + " bytes)");
+        if(dataLength > blockSize_) {
+          throw new IOException("Data size ("+ dataLength +" bytes) greater than specified block size(" + blockSize_ + " bytes)");
         }
 
         // write block trailer & reset variables
         if(dataLength > remainingBytes) {
-          logger_.debug("Key : " + keyBytes + " with value doesnt fit in remaining "+ remainingBytes + " bytes.");        
-          globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset);        
+          logger_.debug("Key : " + keyBytes + " with value doesnt fit in remaining "+ remainingBytes + " bytes.");
+          globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset);
           logger_.debug("Creating new block @ " + globalOffset);
           currentBlockOffset = 0;
-          remainingBytes = blockSize;
+          remainingBytes = blockSize_;
           firstKey = null;
         }
 
         if(firstKey == null) {
           firstKey = keyBytes;
         }
-        
+
         logger_.debug("write@ "+ globalOffset +" key: " + keyBytes + ""
-            + " (hash: " + keyBytes.hashCode() + ")");      
+            + " (hash: " + keyBytes.hashCode() + ")");
         output_.writeInt(value.length);
         // write value (key can be retrieved from block trailer)
         output_.write(value);
@@ -194,7 +194,7 @@ public class DMapBuilder {
       }
 
       // write the last block trailer information
-      globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset); 
+      globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset);
 
       // write global trailer (block start offset-block trailer offset pair & first key in the block)
       output_.writeInt(blockTrailerOffsets.size());
@@ -211,12 +211,12 @@ public class DMapBuilder {
       raf.close();
       output_.flush();
       output_.close();
-      
+
       // fill in the previously created placeholder for trailer offset
-      raf = new RandomAccessFile(mapFile_, "rw");   
+      raf = new RandomAccessFile(mapFile_, "rw");
       raf.seek(12);
       logger_.info("DMap Trailer start at " + globalOffset + ".");
-      raf.writeInt(globalOffset);                
+      raf.writeInt(globalOffset);
     } catch(IOException ioe) {
       throw ioe;
     } finally {
@@ -225,14 +225,14 @@ public class DMapBuilder {
       raf.close();
     }
   }
-  
+
   /*
-   * Returns new global offset after updating the block trailer 
+   * Returns new global offset after updating the block trailer
    */
-  private int updateBlockTrailer(Map<ByteArray, Integer> keyOffsets, 
-                                   Map<Integer, Integer> blockTrailerOffsets, 
-                                   Map<Integer, ByteArray> blockFirstKey, 
-                                   ByteArray firstKey, int globalOffset) throws IOException {
+  private int updateBlockTrailer(Map<ByteArray, Integer> keyOffsets,
+      Map<Integer, Integer> blockTrailerOffsets,
+      Map<Integer, ByteArray> blockFirstKey,
+      ByteArray firstKey, int globalOffset) throws IOException {
     int trailerOffset = output_.size();
     // write number of entries in the current block
     output_.writeInt(keyOffsets.size());
@@ -247,6 +247,6 @@ public class DMapBuilder {
     blockTrailerOffsets.put(globalOffset, trailerOffset);
     // track first keys in each block
     blockFirstKey.put(globalOffset, firstKey);
-    return output_.size();        
+    return output_.size();
   }
 }
