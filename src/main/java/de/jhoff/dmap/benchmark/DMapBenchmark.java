@@ -91,7 +91,7 @@ public class DMapBenchmark {
       loader = loader.preloadOffsets();
     }
 
-    DMap dmap = loader.load();
+    DMap dmap = loader.build();
 
     long time4 = System.currentTimeMillis();
     runTime = time4 - time3;
