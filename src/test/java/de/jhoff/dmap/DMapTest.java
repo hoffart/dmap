@@ -69,6 +69,31 @@ public class DMapTest {
     assertEquals(null, dmap.get(ByteUtils.getBytes(-1)));
     tmpFile.delete();
   }
+  
+  @Test
+  public void testDMapWitFullPreloading() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile)
+                        .preloadOffsets()
+                        .preloadValues()
+                        .build();
+    for (int i = 0; i < count; ++i) {
+      byte[] value = dmap.get(ByteUtils.getBytes(i));
+      assertEquals(i, ByteBuffer.wrap(value).getInt());
+    }
+    assertEquals(null, dmap.get(ByteUtils.getBytes(count + 1)));
+    assertEquals(null, dmap.get(ByteUtils.getBytes(-1)));
+    tmpFile.delete();
+  }
 
   @Test
   public void randomTestWithOffsetPreloading() throws IOException {

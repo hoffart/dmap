@@ -94,7 +94,7 @@ public class DMap {
       cachedByteBuffers_ = new CachingHashMap<>(numBlocks);
       for(ByteArray firstKey : firstKeyInBlock_.keySet()) {
         int blockStart = firstKeyInBlock_.get(firstKey);
-        int blockTrailerStart = firstKeyInBlock_.get(blockStart);
+        int blockTrailerStart = blockOffsetInfo_.get(blockStart);
         FileChannel fc = raf_.getChannel();
         MappedByteBuffer mappedBuffer_ = fc.map(MapMode.READ_ONLY, blockStart, blockTrailerStart - blockStart);
         mappedBuffer_.load();
