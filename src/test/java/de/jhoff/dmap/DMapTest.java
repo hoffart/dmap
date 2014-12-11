@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import de.jhoff.dmap.util.ByteArray;
 import org.junit.Test;
 
 import de.jhoff.dmap.util.ByteUtils;
@@ -213,6 +214,90 @@ public class DMapTest {
     }
     for (Future<Boolean> result : results) {
       assertTrue(result.get());
+    }
+    tmpFile.delete();
+  }
+  
+  @Test
+  public void iteratorWithKeyPreloading() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile)
+      .preloadOffsets()
+      .build();
+    boolean[] keysReturned = new boolean[count];
+    DMap.EntryIterator entryIterator = dmap.entryIterator();
+    while (entryIterator.hasNext()) {
+      DMap.Entry entry = entryIterator.next();
+      keysReturned[ByteBuffer.wrap(entry.getKey()).getInt()] = true;
+      assertEquals(ByteBuffer.wrap(entry.getKey()).getInt(), ByteBuffer.wrap(entry.getValue()).getInt());
+    }
+    for (boolean b : keysReturned) {
+      assertTrue(b);
+    }
+    tmpFile.delete();
+  }
+
+  @Test
+  public void iteratorWithoutPreloading() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile)
+      .build();
+    boolean[] keysReturned = new boolean[count];
+    DMap.EntryIterator entryIterator = dmap.entryIterator();
+    while (entryIterator.hasNext()) {
+      DMap.Entry entry = entryIterator.next();
+      keysReturned[ByteBuffer.wrap(entry.getKey()).getInt()] = true;
+      assertEquals(ByteBuffer.wrap(entry.getKey()).getInt(), ByteBuffer.wrap(entry.getValue()).getInt());
+    }
+    for (boolean b : keysReturned) {
+      assertTrue(b);
+    }
+    tmpFile.delete();
+  }
+
+  @Test
+  public void iteratorWithFullPreloading() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile)
+      .preloadOffsets()
+      .preloadValues()
+      .build();
+    boolean[] keysReturned = new boolean[count];
+    DMap.EntryIterator entryIterator = dmap.entryIterator();
+    while (entryIterator.hasNext()) {
+      DMap.Entry entry = entryIterator.next();
+      keysReturned[ByteBuffer.wrap(entry.getKey()).getInt()] = true;
+      assertEquals(ByteBuffer.wrap(entry.getKey()).getInt(), ByteBuffer.wrap(entry.getValue()).getInt());
+    }
+    for (boolean b : keysReturned) {
+      assertTrue(b);
     }
     tmpFile.delete();
   }

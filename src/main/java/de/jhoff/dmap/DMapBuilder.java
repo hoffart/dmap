@@ -1,9 +1,6 @@
 package de.jhoff.dmap;
 
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
@@ -13,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import de.jhoff.dmap.util.ExtendedFileChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,9 +28,6 @@ import de.jhoff.dmap.util.ByteArray;
  */
 public class DMapBuilder {
 
-  /** Current Map File Version */
-  private static final int VERSION = 1;
-
   /** Default Key-Value Block size (in bytes) - set to 1 MB. */
   private static final int DEFAULT_BLOCK_SIZE = 1048576;
 
@@ -43,13 +38,13 @@ public class DMapBuilder {
   private File mapFile_;
 
   /** Writer to the map file. */
-  private DataOutputStream output_;
+  private ExtendedFileChannel output_;
 
   /** Temporary Map file. */
   private File tmpMapFile_;
 
   /** Writer to the temp file. */
-  private DataOutputStream tmpOutput_;
+  private ExtendedFileChannel tmpOutput_;
 
   /** Keep track of number of entries retrieved from original file */
   private int entriesCount_;
@@ -71,19 +66,15 @@ public class DMapBuilder {
     if (success) {
       blockSize_ = blockSize;
       mapFile_ = mapFile;
-      tmpMapFile_ = new File("tmp_" + mapFile.getName());
-      success = tmpMapFile_.createNewFile();
-      if(success) {
-        tmpOutput_ = new DataOutputStream(
-            new BufferedOutputStream(
-                new FileOutputStream(tmpMapFile_), 1024));
-      } else {
+      try {
+        tmpMapFile_ = File.createTempFile("tmpDMap_", "_" + mapFile.getName());
+      } catch (Exception e) {
         throw new IOException("Error creating intermediate file: " + tmpMapFile_ + ", cannot write.");
       }
-
-      output_ = new DataOutputStream(
-          new BufferedOutputStream(
-              new FileOutputStream(mapFile_), 1024));
+      tmpOutput_ = new ExtendedFileChannel(new RandomAccessFile(tmpMapFile_, "rw").getChannel());
+      
+      
+      output_ = new ExtendedFileChannel(new RandomAccessFile(mapFile_, "rw").getChannel());
     } else {
       throw new IOException("Output map file already exists at: " + mapFile
           + ", cannot write.");
@@ -103,7 +94,7 @@ public class DMapBuilder {
     tmpOutput_.flush();
     tmpOutput_.close();
 
-    RandomAccessFile raf = new RandomAccessFile(tmpMapFile_, "r");
+    ExtendedFileChannel raf = new ExtendedFileChannel(new RandomAccessFile(tmpMapFile_, "r").getChannel());
     byte[] key;
     byte[] value;
     long currentOffset = 0;
@@ -122,24 +113,24 @@ public class DMapBuilder {
 
         tmpKeyOffsetMap.put(new ByteArray(key), currentOffset);
         // ignore the value byte sequence (for the time being) and move to next record start pos
-        currentOffset = raf.getFilePointer() + valLen;
-        raf.seek(currentOffset);
+        currentOffset = raf.position() + valLen;
+        raf.position(currentOffset);
       }
 
       logger_.debug("Loaded " + tmpKeyOffsetMap.size() + " keys from temporary file");
 
       // global header - version, entries count, block size, trailer offset
-      output_.writeInt(VERSION);
+      output_.writeInt(DMap.VERSION);
       output_.writeInt(tmpKeyOffsetMap.size());
       output_.writeInt(blockSize_);
       // insert placeholder for trailer offset
-      output_.writeInt(0);
+      output_.writeLong(0);
 
       List<ByteArray> allKeys = new ArrayList<>(tmpKeyOffsetMap.keySet());
       Collections.sort(allKeys);
       logger_.info("Writing map for " + allKeys.size() + " keys.");
 
-      int globalOffset = 16;
+      long globalOffset = 20l;
       int currentBlockOffset = 0;
       int remainingBytes = blockSize_;
       ByteArray firstKey = null;
@@ -147,19 +138,18 @@ public class DMapBuilder {
       // Map to store block-level key-offset pairs (to be written to each block trailer)
       Map<ByteArray, Integer> blockKeyOffset_ = new HashMap<>();
       // Map to store blockStart-blockTrailerStart pair (to be written to global trailer)
-      Map<Integer, Integer> blockTrailerOffsets = new HashMap<>();
+      Map<Long, Long> blockTrailerOffsets = new HashMap<>();
       // Map to store blockStart-firstKey pair (to be written to global trailer)
-      Map<Integer, ByteArray> blockFirstKey = new HashMap<>();
+      Map<Long, ByteArray> blockFirstKey = new HashMap<>();
 
       for (ByteArray keyBytes : allKeys) {
-        key = keyBytes.getBytes();
         long offset = tmpKeyOffsetMap.get(keyBytes);
-        raf.seek(offset);
+        raf.position(offset);
         int keyLen = raf.readInt();
         int valLen = raf.readInt();
         value = new byte[valLen];
         // position pointer at the starting of value data
-        raf.seek(raf.getFilePointer() + keyLen);
+        raf.position(raf.position() + keyLen);
         raf.read(value);
 
         int dataLength = 4 + value.length;
@@ -198,11 +188,11 @@ public class DMapBuilder {
 
       // write global trailer (block start offset-block trailer offset pair & first key in the block)
       output_.writeInt(blockTrailerOffsets.size());
-      List<Integer> allBlockKeys = new ArrayList<>(blockTrailerOffsets.keySet());
+      List<Long> allBlockKeys = new ArrayList<>(blockTrailerOffsets.keySet());
       Collections.sort(allBlockKeys);
-      for(int blockStart : allBlockKeys) {
-        output_.writeInt(blockStart);
-        output_.writeInt(blockTrailerOffsets.get(blockStart));
+      for(long blockStart : allBlockKeys) {
+        output_.writeLong(blockStart);
+        output_.writeLong(blockTrailerOffsets.get(blockStart));
         byte[] tmpFirstKeyByte = blockFirstKey.get(blockStart).getBytes();
         // write the first key info to global trailer
         output_.writeInt(tmpFirstKeyByte.length);
@@ -213,10 +203,10 @@ public class DMapBuilder {
       output_.close();
 
       // fill in the previously created placeholder for trailer offset
-      raf = new RandomAccessFile(mapFile_, "rw");
-      raf.seek(12);
+      raf = new ExtendedFileChannel(new RandomAccessFile(mapFile_, "rw").getChannel());
+      raf.position(12);
       logger_.info("DMap Trailer start at " + globalOffset + ".");
-      raf.writeInt(globalOffset);
+      raf.writeLong(globalOffset);
     } catch(IOException ioe) {
       throw ioe;
     } finally {
@@ -229,24 +219,24 @@ public class DMapBuilder {
   /*
    * Returns new global offset after updating the block trailer
    */
-  private int updateBlockTrailer(Map<ByteArray, Integer> keyOffsets,
-      Map<Integer, Integer> blockTrailerOffsets,
-      Map<Integer, ByteArray> blockFirstKey,
-      ByteArray firstKey, int globalOffset) throws IOException {
-    int trailerOffset = output_.size();
+  private long updateBlockTrailer(Map<ByteArray, Integer> keyOffsets,
+      Map<Long, Long> blockTrailerOffsets,
+      Map<Long, ByteArray> blockFirstKey,
+      ByteArray firstKey, long globalOffset) throws IOException {
+    long trailerOffset = output_.size();
     // write number of entries in the current block
     output_.writeInt(keyOffsets.size());
     for(Entry<ByteArray, Integer> e : keyOffsets.entrySet()) {
       ByteArray byteArray = e.getKey();
       output_.writeInt(byteArray.getBytes().length);
       output_.write(byteArray.getBytes());
-      output_.writeInt(keyOffsets.get(byteArray));
+      output_.writeInt(e.getValue());
     }
     keyOffsets.clear();
     // track block offset info
     blockTrailerOffsets.put(globalOffset, trailerOffset);
     // track first keys in each block
     blockFirstKey.put(globalOffset, firstKey);
-    return output_.size();
+    return output_.position();
   }
 }

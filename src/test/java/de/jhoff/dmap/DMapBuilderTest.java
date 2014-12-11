@@ -26,7 +26,7 @@ public class DMapBuilderTest {
         
     DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256);
     int count = 1 << 8;
-    int version = 1;
+    int version = 3;
     int defaultblockSize = 256;
     for (int i = 0; i < count; ++i) {
       dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
@@ -42,8 +42,8 @@ public class DMapBuilderTest {
     // header - block size
     assertEquals(defaultblockSize, raf.readInt());
     // trailer starts at (16 + (totblock * (block size + block trailer size))
-    assertEquals(5168, raf.readInt());
-    raf.seek(5168);
+    assertEquals(5172, raf.readLong());
+    raf.seek(5172);
     assertEquals(8, raf.readInt());
     tmpFile.delete();
     raf.close();
@@ -62,23 +62,23 @@ public class DMapBuilderTest {
 
     dmapBuilder.build();     
 
-    RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
+    RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");
     // trailer
-    raf.seek(64);
+    raf.seek(68);
     // total blocks
     assertEquals(2, raf.readInt());
     // start of first block
-    assertEquals(16, raf.readInt());
+    assertEquals(20, raf.readLong());
     // start of first blocks trailer (should not be 26 for given block size 10)
-    assertEquals(24, raf.readInt());
+    assertEquals(28, raf.readLong());
     // next should be the length of the first key (integer)
     assertEquals(4, raf.readInt());
     // followed by the key itself (int again)
     assertEquals(0, raf.readInt());
     // start of 2nd block
-    assertEquals(40, raf.readInt());
+    assertEquals(44, raf.readLong());
     // start of 2nd blocks trailer
-    assertEquals(48, raf.readInt());
+    assertEquals(52, raf.readLong());
     tmpFile.delete();
     raf.close();
   }
@@ -128,30 +128,31 @@ public class DMapBuilderTest {
     dmapBuilder.build();     
     RandomAccessFile raf = new RandomAccessFile(tmpFile, "r");            
     // verify 3rd blocks offset info stored in global trailer (starts at 272)
-    raf.seek(272);
-    assertEquals(104, raf.readInt());
+    //TODO: fix for long
+    raf.seek(292);
+    assertEquals(108, raf.readLong());
     // start of 3rd blocks trailer
-    assertEquals(120, raf.readInt());
+    assertEquals(124, raf.readLong());
     // the length of first key in 3rd block should be 4
     assertEquals(4, raf.readInt());
     // the first key itself should be 5.
     assertEquals(5, raf.readInt());
     // check for key-values in block 1
-    raf.seek(20);
+    raf.seek(24);
     assertEquals(1, raf.readInt());
-    raf.seek(28);
+    raf.seek(32);
     assertEquals(2, raf.readInt());
 
     // check for key-values in block 3
-    raf.seek(108);
+    raf.seek(112);
     assertEquals(5, raf.readInt());
-    raf.seek(116);
+    raf.seek(120);
     assertEquals(6, raf.readInt());
 
     // check for key-values in block 5
-    raf.seek(196);
+    raf.seek(200);
     assertEquals(9, raf.readInt());
-    raf.seek(204);
+    raf.seek(208);
     assertEquals(10, raf.readInt());
 
     tmpFile.delete();

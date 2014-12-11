@@ -19,7 +19,7 @@ public class CachingHashMap<K, V> extends LinkedHashMap<K, V> {
     super(maxItems / 2);
     maxItems_ = maxItems;
     if (maxItems > 0) {
-      logger_.info("Caching up to " + maxItems + " items");
+      logger_.debug("Caching up to " + maxItems + " items");
     }
   }
 
