@@ -18,15 +18,18 @@ public class DMapBenchmark {
 
   public static void main(String[] args) throws IOException {    
     boolean[] arrPreloadOffsets = new boolean[]{true, false};
+    boolean[] arrCompressValues = new boolean[]{false, true};
 
-    for(boolean preloadOffset : arrPreloadOffsets) {      
-      init();
-      for(int i=0;i<arrBlockSizes.length;i++) {
-        for(int j=0;j<arrKeys.length;j++) {
-          runDmapBenchmarkTest(i, j, preloadOffset);
+    for(boolean preloadOffset : arrPreloadOffsets) {
+      for (boolean arrCompressValue : arrCompressValues) {
+        init();
+        for (int i = 0; i < arrBlockSizes.length; i++) {
+          for (int j = 0; j < arrKeys.length; j++) {
+            runDmapBenchmarkTest(i, j, preloadOffset, arrCompressValue);
+          }
         }
+        printResults(preloadOffset, arrCompressValue);
       }
-      printResults(preloadOffset);      
     }    
   }
 
@@ -39,11 +42,18 @@ public class DMapBenchmark {
     blocksUsed = new int[n][m];
   }
 
-  private static void printResults(boolean preloadOffset) {
+  private static void printResults(boolean preloadOffset, boolean compressValues) {
     System.out.println("================");
     System.out.print("OFFSET PRELOADING : ");
     if(preloadOffset) {
        System.out.println("ENABLED");
+    } else {
+      System.out.println("DISABLED");
+    }
+
+    System.out.print("VALUE COMPRESSION : ");
+    if(compressValues) {
+      System.out.println("ENABLED");
     } else {
       System.out.println("DISABLED");
     }
@@ -64,14 +74,14 @@ public class DMapBenchmark {
     System.out.println("================");
   }
 
-  private static void runDmapBenchmarkTest(int bIdx, int kIdx, boolean preloadOffset) throws IOException {
+  private static void runDmapBenchmarkTest(int bIdx, int kIdx, boolean preloadOffset, boolean compressValues) throws IOException {
     int blockSize = arrBlockSizes[bIdx];
     int keys = arrKeys[kIdx];
     
     File mapFile = File.createTempFile("tmp", "dmap");
     mapFile.delete();
 
-    DMapBuilder dmapBuilder = new DMapBuilder(mapFile, blockSize);
+    DMapBuilder dmapBuilder = new DMapBuilder(mapFile, blockSize, compressValues);
     ByteBuffer buf = ByteBuffer.allocate(4);
     long time1 = System.currentTimeMillis();
     for (int i = 0; i < keys; ++i) {

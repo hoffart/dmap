@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import de.jhoff.dmap.util.CompressionUtils;
 import de.jhoff.dmap.util.ExtendedFileChannel;
+import org.iq80.snappy.Snappy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +35,9 @@ public class DMapBuilder {
 
   /** Current block size for the file*/
   private int blockSize_;
+  
+  /** Compress values */
+  private boolean compressValues_;
 
   /** Map file to write to. */
   private File mapFile_;
@@ -54,6 +59,10 @@ public class DMapBuilder {
   public DMapBuilder(File mapFile) throws IOException {
     this(mapFile, DEFAULT_BLOCK_SIZE);
   }
+  
+  public DMapBuilder(File mapFile, int blockSize) throws IOException {
+    this(mapFile, blockSize, true);
+  }
 
   /**
    * 
@@ -61,10 +70,11 @@ public class DMapBuilder {
    * @param blockSize Size of a block (in bytes).
    * @throws IOException
    */
-  public DMapBuilder(File mapFile, int blockSize) throws IOException {
+  public DMapBuilder(File mapFile, int blockSize, boolean compressValues) throws IOException {
     boolean success = mapFile.createNewFile();
     if (success) {
       blockSize_ = blockSize;
+      compressValues_ = compressValues;
       mapFile_ = mapFile;
       try {
         tmpMapFile_ = File.createTempFile("tmpDMap_", "_" + mapFile.getName());
@@ -90,7 +100,7 @@ public class DMapBuilder {
   }
 
   public void build() throws IOException {
-    Map<ByteArray, Long> tmpKeyOffsetMap =  new HashMap<ByteArray, Long>();
+    Map<ByteArray, Long> tmpKeyOffsetMap =  new HashMap<>();
     tmpOutput_.flush();
     tmpOutput_.close();
 
@@ -123,6 +133,7 @@ public class DMapBuilder {
       output_.writeInt(DMap.VERSION);
       output_.writeInt(tmpKeyOffsetMap.size());
       output_.writeInt(blockSize_);
+      output_.writeBool(compressValues_);
       // insert placeholder for trailer offset
       output_.writeLong(0);
 
@@ -130,7 +141,7 @@ public class DMapBuilder {
       Collections.sort(allKeys);
       logger_.info("Writing map for " + allKeys.size() + " keys.");
 
-      long globalOffset = 20l;
+      long globalOffset = output_.position();
       int currentBlockOffset = 0;
       int remainingBytes = blockSize_;
       ByteArray firstKey = null;
@@ -152,7 +163,11 @@ public class DMapBuilder {
         raf.position(raf.position() + keyLen);
         raf.read(value);
 
-        int dataLength = 4 + value.length;
+        if (compressValues_) {
+          value = Snappy.compress(value);
+        }
+        
+        int dataLength = CompressionUtils.getVNumSize(value.length) + value.length;
 
         if(dataLength > blockSize_) {
           throw new IOException("Data size ("+ dataLength +" bytes) greater than specified block size(" + blockSize_ + " bytes)");
@@ -172,9 +187,9 @@ public class DMapBuilder {
           firstKey = keyBytes;
         }
 
-        logger_.debug("write@ "+ globalOffset +" key: " + keyBytes + ""
-            + " (hash: " + keyBytes.hashCode() + ")");
-        output_.writeInt(value.length);
+        logger_.debug("write@ " + globalOffset + " key: " + keyBytes + ""
+          + " (hash: " + keyBytes.hashCode() + ")");
+        output_.writeVInt(value.length);
         // write value (key can be retrieved from block trailer)
         output_.write(value);
         // store key-offset pair (needed for block trailer)
@@ -187,15 +202,15 @@ public class DMapBuilder {
       globalOffset = updateBlockTrailer(blockKeyOffset_, blockTrailerOffsets, blockFirstKey, firstKey, globalOffset);
 
       // write global trailer (block start offset-block trailer offset pair & first key in the block)
-      output_.writeInt(blockTrailerOffsets.size());
+      output_.writeVInt(blockTrailerOffsets.size());
       List<Long> allBlockKeys = new ArrayList<>(blockTrailerOffsets.keySet());
       Collections.sort(allBlockKeys);
       for(long blockStart : allBlockKeys) {
-        output_.writeLong(blockStart);
-        output_.writeLong(blockTrailerOffsets.get(blockStart));
+        output_.writeVLong(blockStart);
+        output_.writeVLong(blockTrailerOffsets.get(blockStart));
         byte[] tmpFirstKeyByte = blockFirstKey.get(blockStart).getBytes();
         // write the first key info to global trailer
-        output_.writeInt(tmpFirstKeyByte.length);
+        output_.writeVInt(tmpFirstKeyByte.length);
         output_.write(tmpFirstKeyByte);
       }
       raf.close();
@@ -204,11 +219,9 @@ public class DMapBuilder {
 
       // fill in the previously created placeholder for trailer offset
       raf = new ExtendedFileChannel(new RandomAccessFile(mapFile_, "rw").getChannel());
-      raf.position(12);
+      raf.position(DMap.DEFAULT_LOC_FOR_TRAILER_OFFSET);
       logger_.info("DMap Trailer start at " + globalOffset + ".");
       raf.writeLong(globalOffset);
-    } catch(IOException ioe) {
-      throw ioe;
     } finally {
       // delete the intermediate temp file
       tmpMapFile_.delete();
@@ -225,12 +238,12 @@ public class DMapBuilder {
       ByteArray firstKey, long globalOffset) throws IOException {
     long trailerOffset = output_.size();
     // write number of entries in the current block
-    output_.writeInt(keyOffsets.size());
+    output_.writeVInt(keyOffsets.size());
     for(Entry<ByteArray, Integer> e : keyOffsets.entrySet()) {
       ByteArray byteArray = e.getKey();
-      output_.writeInt(byteArray.getBytes().length);
+      output_.writeVInt(byteArray.getBytes().length);
       output_.write(byteArray.getBytes());
-      output_.writeInt(e.getValue());
+      output_.writeVInt(e.getValue());
     }
     keyOffsets.clear();
     // track block offset info

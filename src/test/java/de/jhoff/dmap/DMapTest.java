@@ -17,13 +17,83 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import de.jhoff.dmap.util.ByteArray;
 import org.junit.Test;
 
 import de.jhoff.dmap.util.ByteUtils;
 
 
 public class DMapTest {
+
+  @Test
+  public void testDMapWithValueCompression() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256, true);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile).build();
+    for (int i = 0; i < count; ++i) {
+      byte[] value = dmap.get(ByteUtils.getBytes(i));
+      assertEquals(i, ByteBuffer.wrap(value).getInt());
+    }
+    assertEquals(null, dmap.get(ByteUtils.getBytes(count + 1)));
+    assertEquals(null, dmap.get(ByteUtils.getBytes(-1)));
+    tmpFile.delete();
+  }
+
+  @Test
+  public void testDMapWithOffsetsPreloadingAndValueCompression() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256, true);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile)
+      .preloadOffsets()
+      .build();
+    for (int i = 0; i < count; ++i) {
+      byte[] value = dmap.get(ByteUtils.getBytes(i));
+      assertEquals(i, ByteBuffer.wrap(value).getInt());
+    }
+    assertEquals(null, dmap.get(ByteUtils.getBytes(count + 1)));
+    assertEquals(null, dmap.get(ByteUtils.getBytes(-1)));
+    tmpFile.delete();
+  }
+
+  @Test
+  public void testDMapWitFullPreloadingAndValueCompression() throws IOException {
+    File tmpFile = File.createTempFile("tmp", ".dmap");
+    tmpFile.delete();
+
+    DMapBuilder dmapBuilder = new DMapBuilder(tmpFile, 256, true);
+    int count = 1 << 10;
+    for (int i = 0; i < count; ++i) {
+      dmapBuilder.add(ByteUtils.getBytes(i), ByteUtils.getBytes(i));
+    }
+    dmapBuilder.build();
+
+    DMap dmap = new DMap.Builder(tmpFile)
+      .preloadOffsets()
+      .preloadValues()
+      .build();
+    for (int i = 0; i < count; ++i) {
+      byte[] value = dmap.get(ByteUtils.getBytes(i));
+      assertEquals(i, ByteBuffer.wrap(value).getInt());
+    }
+    assertEquals(null, dmap.get(ByteUtils.getBytes(count + 1)));
+    assertEquals(null, dmap.get(ByteUtils.getBytes(-1)));
+    tmpFile.delete();
+  }
 
   @Test
   public void testDMapWithoutPreloadingOffsets() throws IOException {
@@ -315,7 +385,7 @@ public class DMapTest {
     public Boolean call() throws Exception {
       for (Entry<Integer, Integer> e : toRead_.entrySet()) {
         byte[] value = dmap_.get(ByteUtils.getBytes(e.getKey()));
-        if (e.getValue().intValue() != ByteBuffer.wrap(value).getInt()) {
+        if (e.getValue() != ByteBuffer.wrap(value).getInt()) {
           return false;
         }
       }

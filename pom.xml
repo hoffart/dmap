@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.jhoff</groupId>
 	<artifactId>dmap</artifactId>
-	<version>0.1.4-SNAPSHOT</version>
+	<version>0.1.4</version>
 	<name>DMap</name>
 	<url>http://github.com/hoffart/dmap</url>
 	<properties>
@@ -68,6 +68,11 @@
 		</repository>
 	</distributionManagement>
 	<dependencies>
+		<dependency>
+			<groupId>org.iq80.snappy</groupId>
+			<artifactId>snappy</artifactId>
+			<version>0.3</version>
+		</dependency>
 		<dependency>
 			<groupId>log4j</groupId>
 			<artifactId>log4j</artifactId>
