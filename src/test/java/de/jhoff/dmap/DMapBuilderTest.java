@@ -42,7 +42,7 @@ public class DMapBuilderTest {
     // header - block size
     assertEquals(defaultblockSize, raf.readInt());
     // flag for compression
-    assertEquals(0, raf.readByte());
+    assertEquals(1, raf.readByte());
   
     tmpFile.delete();
     raf.close();
