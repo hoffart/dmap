@@ -13,7 +13,8 @@ public class DMapBenchmark {
   static int[] arrKeys = new int[] {1<<10, 1<<15}; // number of keys to be used for benchmarking
   static long[][] keyAddResults;
   static long[][] mapReadResults;
-  static long[][] results;
+  static long[][] rndReadResults;
+  static long[][] iterReadResults;
   static int[][] blocksUsed;
 
   public static void main(String[] args) throws IOException {    
@@ -36,7 +37,8 @@ public class DMapBenchmark {
   private static void init() {
     int n = arrBlockSizes.length;
     int m = arrKeys.length;
-    results = new long[n][m];
+    rndReadResults = new long[n][m];
+    iterReadResults = new long[n][m];
     keyAddResults = new long[n][m];
     mapReadResults = new long[n][m];
     blocksUsed = new int[n][m];
@@ -67,7 +69,9 @@ public class DMapBenchmark {
         System.out.println("Time to read map : " + mapReadResults[i][j] + "ms.");
         System.out.println("Blocks used by map : " + blocksUsed[i][j]);
         System.out.println("Time for random read of " + arrKeys[j] + " keys : " + 
-            results[i][j] + "ms.");
+            rndReadResults[i][j] + "ms.");
+        System.out.println("Time for iterator read of " + arrKeys[j] + " keys : " +
+            iterReadResults[i][j] + "ms.");
         System.out.println();
       }
     }
@@ -119,7 +123,19 @@ public class DMapBenchmark {
     long time6 = System.currentTimeMillis();
     runTime = time6 - time5;
     
-    results[bIdx][kIdx] = runTime;        
+    rndReadResults[bIdx][kIdx] = runTime;
+
+
+    long time7 = System.currentTimeMillis();
+    DMap.EntryIterator entryIterator = dmap.entryIterator();
+    while (entryIterator.hasNext()) {
+      entryIterator.next();
+    }
+    long time8 = System.currentTimeMillis();
+    runTime = time8 - time7;
+
+    iterReadResults[bIdx][kIdx] = runTime;
+    
     mapFile.delete();
   }
 }

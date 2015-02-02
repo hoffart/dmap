@@ -352,7 +352,15 @@ public class DMap {
     firstKeys = new ByteArray[firstKeyInBlock_.size()];
     firstKeyInBlock_.keySet().toArray(firstKeys);
   }
-  
+
+  /**
+   * This method returns an iterator for this DMap with 
+   * different implementations for different preload settings.
+   * 
+   * These iterators are NOT thread save.
+   * 
+   * @return an iterator for the current dmap
+   */
   public EntryIterator entryIterator() {
     if (preloadAllKeyOffsets)
       return new EntryIteratorForPreloadedKeys();
@@ -405,6 +413,7 @@ public class DMap {
   private class EntryIteratorForPreloadedKeys implements EntryIterator {
     Iterator<TObjectIntHashMap<ByteArray>> blockIterator_;
     Iterator<ByteArray> keyIterator_;
+    Entry nextEntry;
     
     private EntryIteratorForPreloadedKeys() {
       blockIterator_ = blockTrailerKeys.values().iterator();
@@ -412,24 +421,26 @@ public class DMap {
         keyIterator_ = blockIterator_.next().keySet().iterator();
       } else
         keyIterator_ = null;
+      nextEntry = null;
     }
 
     @Override
-    public boolean hasNext() {
-      if (keyIterator_ != null && keyIterator_.hasNext())
-        return true;
-      else {
-        while (blockIterator_.hasNext()) {
-          keyIterator_ = blockIterator_.next().keySet().iterator();
-          if (keyIterator_.hasNext())
-            return true;
-        }
-      }
-      return false;
+    public boolean hasNext() throws IOException {
+      if (nextEntry == null)
+        nextEntry = getNextEntry();
+      return nextEntry != null;
     }
 
     @Override
     public Entry next() throws IOException {
+      if (nextEntry == null)
+        nextEntry = getNextEntry();
+      Entry tmpNextEntry = nextEntry;
+      nextEntry = null;
+      return tmpNextEntry;
+    }
+    
+    private Entry getNextEntry() throws IOException {
       // TODO: make it more efficient if necessary
       if (keyIterator_.hasNext()) {
         ByteArray key = keyIterator_.next();
@@ -438,14 +449,17 @@ public class DMap {
       while (blockIterator_.hasNext()) {
         keyIterator_ = blockIterator_.next().keySet().iterator();
         if (keyIterator_.hasNext())
-          return next();
+          return getNextEntry();
       }
       return null;
     }
   }
-  
+
+  /**
+   * A not thread save iterator for DMap entries (byte[], byte[])
+   */
   public static interface EntryIterator {
-    public boolean hasNext();
+    public boolean hasNext() throws IOException;
     public Entry next() throws IOException;
   }
   
