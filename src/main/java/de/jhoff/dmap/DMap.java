@@ -102,6 +102,11 @@ public class DMap {
     blockSize = raf_.readInt();
     valuesCompressed = raf_.readBool();
     
+    if (size == 0) {
+      cachedByteBuffers_ = new CachingHashMap<>(0);
+      return;
+    }
+    
     loadKeyDetails();
 
     if (preloadAllValues) {
@@ -222,6 +227,9 @@ public class DMap {
    * @return  byte[] associated with key.
    */
   public byte[] get(byte[] key) throws IOException {
+    if (size == 0)
+      return null;
+    
     ByteArray keyBytes = new ByteArray(key);
     // logger_.debug("get(" + keyBytes + ") - hash: " + keyBytes.hashCode());
     // identify the block containing the given key using first key information.
@@ -442,7 +450,7 @@ public class DMap {
     
     private Entry getNextEntry() throws IOException {
       // TODO: make it more efficient if necessary
-      if (keyIterator_.hasNext()) {
+      if (keyIterator_ != null && keyIterator_.hasNext()) {
         ByteArray key = keyIterator_.next();
         return new Entry(key.getBytes(), get(key.getBytes()));
       }
