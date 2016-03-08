@@ -54,6 +54,9 @@ public class DMapBuilder {
   /** Keep track of number of entries retrieved from original file */
   private int entriesCount_;
 
+  /** Keep track of number of bytes written */
+  private int byteCount_;
+
   private final Logger logger_ = LoggerFactory.getLogger(DMapBuilder.class);
 
   public DMapBuilder(File mapFile) throws IOException {
@@ -97,6 +100,7 @@ public class DMapBuilder {
     tmpOutput_.write(key);
     tmpOutput_.write(value);
     entriesCount_++;
+    byteCount_ += key.length + value.length;
   }
 
   public void build() throws IOException {
@@ -139,6 +143,7 @@ public class DMapBuilder {
 
       List<ByteArray> allKeys = new ArrayList<>(tmpKeyOffsetMap.keySet());
       Collections.sort(allKeys);
+      logger_.info("Map size: " + byteCount_ + " bytes ");
       logger_.info("Writing map for " + allKeys.size() + " keys.");
 
       long globalOffset = output_.position();
